@@ -1,0 +1,39 @@
+{
+  "id": "elder-care",
+  "name": "Elder Care",
+  "version": "1.0.0",
+  "description": "Coordinate care for a loved one: a visit rotation, shared care tasks, appointment notes, and an observation log the whole care circle can see.",
+  "entrypoint": "index.html",
+  "runtime": "static",
+  "icon": "🧓",
+  "category": "family",
+  "tags": ["elder-care", "caregiving", "coordination", "family", "appointments"],
+  "storage": "db",
+  "db_plaintext_columns": ["category", "status", "date", "time"],
+  "data_access": {
+    "reads": ["family.members"],
+    "writes": []
+  },
+  "permissions": {
+    "default_audience": "everyone",
+    "requires_approval": false
+  },
+  "row_policies": {
+    "visits": { "kind": "adult_writable" },
+    "tasks": { "kind": "adult_writable" },
+    "appointments": { "kind": "adult_writable" },
+    "observations": { "kind": "adult_writable" }
+  },
+  "publishes": ["elder_care.visit_scheduled", "elder_care.task_created", "elder_care.appointment_added"],
+  "nav": { "label": "Elder Care" },
+  "glance": {
+    "source": {
+      "kind": "sql",
+      "query": "SELECT COUNT(*) AS n FROM app_elder_care__tasks WHERE status = 'open' LIMIT 1"
+    },
+    "display": { "template": "badge", "count": "n", "label": "open care tasks", "severity": "info" }
+  },
+  "resource_limits": {
+    "max_db_bytes": 52428800
+  }
+}

@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Elder Care</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: var(--hub-bg, #f9fafb);
+      --surface: var(--hub-surface, #ffffff);
+      --border: var(--hub-border, #e5e7eb);
+      --border-mid: var(--hub-border, #d1d5db);
+      --text: var(--hub-text, #111827);
+      --muted: var(--hub-text-muted, #6b7280);
+      --accent: var(--hub-primary, #7c3aed);
+      --accent-hover: var(--hub-primary-hover, #6d28d9);
+      --accent-fg: var(--hub-primary-fg, #ffffff);
+      --radius: var(--hub-radius, 8px);
+      --green: #047857; --green-soft: #d1fae5;
+      --amber: #b45309; --amber-soft: #fef3c7;
+      --red: #b91c1c; --red-soft: #fee2e2;
+      --blue: #1d4ed8; --blue-soft: #dbeafe;
+      --shadow: 0 1px 3px rgba(15, 23, 42, .07);
+    }
+    body { min-height: 100vh; background: var(--bg); color: var(--text);
+      font-family: var(--hub-font, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+      font-size: var(--hub-font-size, 15px); line-height: 1.5; }
+    .app { max-width: 780px; margin: 0 auto; padding: 16px; }
+    .topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+    h1 { font-size: 1.35rem; line-height: 1.2; }
+    h2 { font-size: 1rem; margin-bottom: 10px; }
+    h3 { font-size: .95rem; }
+    .muted { color: var(--muted); }
+    .tiny { font-size: .78rem; }
+    .stack { display: grid; gap: 12px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px; }
+    .row-card { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+    .pill { display: inline-flex; align-items: center; justify-content: center; min-height: 22px; padding: 2px 8px; border-radius: 999px; background: #f1f5f9; color: var(--muted); font-size: .72rem; font-weight: 700; white-space: nowrap; }
+    .pill.good { background: var(--green-soft); color: var(--green); }
+    .pill.warn { background: var(--amber-soft); color: var(--amber); }
+    .pill.info { background: var(--blue-soft); color: var(--blue); }
+    .pill.mood { background: #ede9fe; color: #6d28d9; }
+    .tabs { display: flex; gap: 4px; background: var(--border); padding: 3px; border-radius: 10px; margin-bottom: 14px; overflow-x: auto; }
+    .tab { flex: 1; border: 0; border-radius: 8px; background: transparent; color: var(--muted); padding: 8px 10px; font: inherit; font-weight: 700; font-size: .85rem; cursor: pointer; white-space: nowrap; }
+    .tab.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+    .section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 4px 2px 10px; }
+    .section-head h2 { margin-bottom: 0; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid transparent; border-radius: 8px; padding: 8px 12px; font: inherit; font-size: .86rem; font-weight: 700; cursor: pointer; min-height: 38px; background: var(--accent); color: var(--accent-fg); }
+    .btn:hover { background: var(--accent-hover); }
+    .btn:disabled { opacity: .48; cursor: default; }
+    .btn-ghost { background: transparent; color: var(--text); border-color: var(--border-mid); }
+    .btn-ghost:hover { background: #f8fafc; }
+    .btn-danger { background: var(--red-soft); color: var(--red); border-color: transparent; }
+    .btn-sm { min-height: 31px; padding: 5px 9px; font-size: .78rem; }
+    .avatar { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: white; font-size: .74rem; font-weight: 800; flex-shrink: 0; }
+    .who { display: inline-flex; align-items: center; gap: 6px; }
+    .meta { color: var(--muted); font-size: .8rem; margin-top: 3px; }
+    .form { display: grid; gap: 10px; }
+    .field { display: grid; gap: 4px; }
+    .two { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+    label { font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 800; }
+    input, textarea, select { width: 100%; border: 1.5px solid var(--border-mid); border-radius: 8px; padding: 9px 11px; font: inherit; background: var(--surface); color: var(--text); }
+    textarea { min-height: 68px; resize: vertical; }
+    input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
+    .empty, .loading { color: var(--muted); text-align: center; padding: 30px 16px; }
+    .error { background: var(--red-soft); color: var(--red); padding: 9px 12px; border-radius: 8px; margin-bottom: 10px; font-size: .86rem; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 50; }
+    .modal { background: var(--surface); border-radius: 12px; padding: 18px; width: 100%; max-width: 460px; max-height: 90vh; overflow: auto; box-shadow: 0 20px 50px rgba(15,23,42,.25); }
+    .modal h2 { margin-bottom: 14px; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+    .done { opacity: .6; }
+    .done .task-title { text-decoration: line-through; }
+    @media (max-width: 520px) { .two { grid-template-columns: 1fr; } }
+  </style>
+  <base href="/run/elder-care/">
+</head>
+<body>
+<div class="app"><div id="root" class="loading">Loading…</div></div>
+
+<script type="module">
+import { esc, isAdult, memberColor, initial, hubConfirm } from "/hub-sdk.js";
+
+const CONTEXT = window.__CONTEXT_URL ?? "";
+const DB = window.__DB_URL ?? "";
+const EVENTS_URL = window.__EVENTS_URL ?? "/api/events";
+const APP_ID = window.__APP_ID ?? "elder-care";
+const HUB_MEMBER = window.__CURRENT_MEMBER ?? null;
+
+let members = [], memberMap = new Map(), me = null;
+let visits = [], tasks = [], appointments = [], observations = [];
+let tab = "schedule";
+let error = "";
+let modalEl = null;
+
+const CATEGORIES = [
+  { id: "general", label: "General", cls: "info" },
+  { id: "health", label: "Health", cls: "warn" },
+  { id: "mood", label: "Mood", cls: "mood" },
+  { id: "meds", label: "Medication", cls: "good" },
+];
+
+function nowIso() { return new Date().toISOString(); }
+function uid(p) { return `${p}-${crypto.randomUUID()}`; }
+function today() { return new Date().toISOString().slice(0, 10); }
+function fmtDate(v) { if (!v) return ""; return new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric" }).format(new Date(`${v}T12:00:00`)); }
+function fmtWhen(iso) { if (!iso) return ""; return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(iso)); }
+function memberName(id) { return memberMap.get(id)?.name ?? "Someone"; }
+function canEdit() { return isAdult(me); }
+function catOf(id) { return CATEGORIES.find(c => c.id === id) ?? CATEGORIES[0]; }
+
+async function db(sql, params = []) {
+  if (!DB) return { rows: [] };
+  const res = await fetch(DB, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sql, params }) });
+  const json = await res.json();
+  if (json.error) throw new Error(json.error);
+  return json;
+}
+
+async function loadMembers() {
+  if (!CONTEXT) {
+    members = [
+      { id: "demo-1", name: "Dana", role: "adult" },
+      { id: "demo-2", name: "Sam", role: "adult" },
+      { id: "demo-3", name: "Pat", role: "adult" },
+    ];
+  } else {
+    try { const res = await fetch(`${CONTEXT}?keys=family.members`); members = ((await res.json())["family.members"]) ?? []; }
+    catch { members = []; }
+  }
+  memberMap = new Map(members.map(m => [m.id, m]));
+  me = HUB_MEMBER ?? members[0] ?? { id: "guest", name: "Guest", role: "adult" };
+}
+
+function seedDemo() {
+  visits = [
+    { id: "v1", date: today(), time: "10:00", member_id: "demo-1", member_name: "Dana", note: "Morning check-in, breakfast", created_by: "demo-1", created_at: nowIso() },
+    { id: "v2", date: today(), time: "18:00", member_id: "demo-2", member_name: "Sam", note: "Dinner and meds", created_by: "demo-2", created_at: nowIso() },
+  ];
+  tasks = [
+    { id: "t1", title: "Call Dr. Reyes about the new prescription", detail: "Ask if it can be taken with breakfast.", assignee_id: "demo-3", assignee_name: "Pat", due_date: today(), status: "open", created_by: "demo-1", created_by_name: "Dana", created_at: nowIso(), completed_at: "" },
+    { id: "t2", title: "Refill blood pressure meds", detail: "", assignee_id: "demo-2", assignee_name: "Sam", due_date: "", status: "done", created_by: "demo-2", created_by_name: "Sam", created_at: nowIso(), completed_at: nowIso() },
+  ];
+  appointments = [
+    { id: "a1", title: "Cardiology follow-up", provider: "Dr. Reyes", date: today(), time: "14:30", location: "Mercy Clinic, Suite 210", accompanied_by_id: "demo-1", accompanied_by_name: "Dana", notes: "Bring the medication list.", created_by: "demo-1", created_at: nowIso() },
+  ];
+  observations = [
+    { id: "o1", member_id: "demo-2", member_name: "Sam", category: "mood", note: "In good spirits today, enjoyed the walk.", observed_at: nowIso(), created_at: nowIso() },
+    { id: "o2", member_id: "demo-1", member_name: "Dana", category: "health", note: "Slight swelling in ankles, keeping an eye on it.", observed_at: nowIso(), created_at: nowIso() },
+  ];
+}
+
+async function loadData() {
+  if (!DB) { seedDemo(); return; }
+  const [v, t, a, o] = await Promise.all([
+    db("SELECT * FROM app_elder_care__visits ORDER BY date ASC, time ASC"),
+    db("SELECT * FROM app_elder_care__tasks ORDER BY (status = 'done'), (due_date = ''), due_date ASC, created_at DESC"),
+    db("SELECT * FROM app_elder_care__appointments ORDER BY date ASC, time ASC"),
+    db("SELECT * FROM app_elder_care__observations ORDER BY observed_at DESC"),
+  ]);
+  visits = v.rows; tasks = t.rows; appointments = a.rows; observations = o.rows;
+}
+
+async function init() {
+  try { await Promise.all([loadMembers(), loadData()]); render(); }
+  catch (e) { error = e.message; render(); }
+}
+
+function publish(type, payload) {
+  fetch(EVENTS_URL, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_app_id: APP_ID, type, payload }) }).catch(() => {});
+}
+
+/* ── modal ── */
+function openModal(html) {
+  closeModal();
+  modalEl = document.createElement("div");
+  modalEl.className = "modal-backdrop";
+  modalEl.innerHTML = `<div class="modal">${html}</div>`;
+  modalEl.addEventListener("click", e => { if (e.target === modalEl) closeModal(); });
+  document.body.appendChild(modalEl);
+  const first = modalEl.querySelector("[data-autofocus]");
+  if (first) first.focus();
+}
+function closeModal() { modalEl?.remove(); modalEl = null; }
+
+function memberOptions(selectedId) {
+  return members.map(m => `<option value="${esc(m.id)}" ${m.id === selectedId ? "selected" : ""}>${esc(m.name)}</option>`).join("");
+}
+
+/* ── visits ── */
+function visitModal() {
+  openModal(`
+    <h2>Schedule a visit</h2>
+    <form class="form" id="visit-form">
+      <div class="two">
+        <div class="field"><label for="v-date">Date</label><input id="v-date" type="date" value="${today()}" data-autofocus required></div>
+        <div class="field"><label for="v-time">Time</label><input id="v-time" type="time" value="10:00"></div>
+      </div>
+      <div class="field"><label for="v-who">Who is visiting</label><select id="v-who">${memberOptions(me?.id)}</select></div>
+      <div class="field"><label for="v-note">Note</label><input id="v-note" placeholder="What's planned"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+        <button type="submit" class="btn">Schedule</button>
+      </div>
+    </form>`);
+}
+async function submitVisit(form) {
+  const date = form["v-date"].value; if (!date) return;
+  const whoId = form["v-who"].value;
+  const btn = modalEl.querySelector(".btn[type=submit]"); btn.disabled = true; btn.textContent = "Saving…";
+  const row = { id: uid("v"), date, time: form["v-time"].value, member_id: whoId, member_name: memberName(whoId), note: form["v-note"].value.trim(), created_by: me.id, created_at: nowIso() };
+  try {
+    if (DB) await db(`INSERT INTO app_elder_care__visits (id, date, time, member_id, member_name, note, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)`,
+      [row.id, row.date, row.time, row.member_id, row.member_name, row.note, row.created_by, row.created_at]);
+    visits = [...visits, row].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+    closeModal(); render();
+    publish("elder_care.visit_scheduled", { date: row.date, member_id: row.member_id });
+  } catch (e) { btn.disabled = false; btn.textContent = "Schedule"; showError(e.message); }
+}
+
+/* ── tasks ── */
+function taskModal() {
+  openModal(`
+    <h2>New care task</h2>
+    <form class="form" id="task-form">
+      <div class="field"><label for="t-title">Task</label><input id="t-title" placeholder="e.g. Call the pharmacy" data-autofocus required></div>
+      <div class="field"><label for="t-detail">Details</label><textarea id="t-detail" placeholder="Anything the helper should know"></textarea></div>
+      <div class="two">
+        <div class="field"><label for="t-who">Assign to</label><select id="t-who"><option value="">Unassigned</option>${memberOptions()}</select></div>
+        <div class="field"><label for="t-due">Due</label><input id="t-due" type="date"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+        <button type="submit" class="btn">Add task</button>
+      </div>
+    </form>`);
+}
+async function submitTask(form) {
+  const title = form["t-title"].value.trim(); if (!title) { form["t-title"].focus(); return; }
+  const whoId = form["t-who"].value;
+  const btn = modalEl.querySelector(".btn[type=submit]"); btn.disabled = true; btn.textContent = "Saving…";
+  const row = { id: uid("t"), title, detail: form["t-detail"].value.trim(), assignee_id: whoId, assignee_name: whoId ? memberName(whoId) : "", due_date: form["t-due"].value, status: "open", created_by: me.id, created_by_name: me.name, created_at: nowIso(), completed_at: "" };
+  try {
+    if (DB) await db(`INSERT INTO app_elder_care__tasks (id, title, detail, assignee_id, assignee_name, due_date, status, created_by, created_by_name, created_at, completed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [row.id, row.title, row.detail, row.assignee_id, row.assignee_name, row.due_date, row.status, row.created_by, row.created_by_name, row.created_at, row.completed_at]);
+    tasks = [row, ...tasks];
+    closeModal(); render();
+    publish("elder_care.task_created", { title: row.title, assignee_id: row.assignee_id });
+  } catch (e) { btn.disabled = false; btn.textContent = "Add task"; showError(e.message); }
+}
+async function toggleTask(id) {
+  const t = tasks.find(x => x.id === id); if (!t) return;
+  const status = t.status === "done" ? "open" : "done";
+  const completed_at = status === "done" ? nowIso() : "";
+  try {
+    if (DB) await db(`UPDATE app_elder_care__tasks SET status = ?, completed_at = ? WHERE id = ?`, [status, completed_at, id]);
+    t.status = status; t.completed_at = completed_at; render();
+  } catch (e) { showError(e.message); }
+}
+async function deleteTask(id) {
+  if (!(await hubConfirm({ message: "Delete this task?", destructive: true, confirmLabel: "Delete" }))) return;
+  try {
+    if (DB) await db(`DELETE FROM app_elder_care__tasks WHERE id = ?`, [id]);
+    tasks = tasks.filter(x => x.id !== id); render();
+  } catch (e) { showError(e.message); }
+}
+
+/* ── appointments ── */
+function apptModal() {
+  openModal(`
+    <h2>Add appointment</h2>
+    <form class="form" id="appt-form">
+      <div class="field"><label for="p-title">Appointment</label><input id="p-title" placeholder="e.g. Cardiology follow-up" data-autofocus required></div>
+      <div class="two">
+        <div class="field"><label for="p-provider">Provider</label><input id="p-provider" placeholder="Doctor / clinic"></div>
+        <div class="field"><label for="p-who">Accompanied by</label><select id="p-who"><option value="">Nobody yet</option>${memberOptions()}</select></div>
+      </div>
+      <div class="two">
+        <div class="field"><label for="p-date">Date</label><input id="p-date" type="date" value="${today()}" required></div>
+        <div class="field"><label for="p-time">Time</label><input id="p-time" type="time"></div>
+      </div>
+      <div class="field"><label for="p-loc">Location</label><input id="p-loc" placeholder="Address or clinic"></div>
+      <div class="field"><label for="p-notes">Notes</label><textarea id="p-notes" placeholder="Questions to ask, what to bring"></textarea></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+        <button type="submit" class="btn">Add</button>
+      </div>
+    </form>`);
+}
+async function submitAppt(form) {
+  const title = form["p-title"].value.trim(); const date = form["p-date"].value;
+  if (!title || !date) { form["p-title"].focus(); return; }
+  const whoId = form["p-who"].value;
+  const btn = modalEl.querySelector(".btn[type=submit]"); btn.disabled = true; btn.textContent = "Saving…";
+  const row = { id: uid("a"), title, provider: form["p-provider"].value.trim(), date, time: form["p-time"].value, location: form["p-loc"].value.trim(), accompanied_by_id: whoId, accompanied_by_name: whoId ? memberName(whoId) : "", notes: form["p-notes"].value.trim(), created_by: me.id, created_at: nowIso() };
+  try {
+    if (DB) await db(`INSERT INTO app_elder_care__appointments (id, title, provider, date, time, location, accompanied_by_id, accompanied_by_name, notes, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [row.id, row.title, row.provider, row.date, row.time, row.location, row.accompanied_by_id, row.accompanied_by_name, row.notes, row.created_by, row.created_at]);
+    appointments = [...appointments, row].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+    closeModal(); render();
+    publish("elder_care.appointment_added", { title: row.title, date: row.date });
+  } catch (e) { btn.disabled = false; btn.textContent = "Add"; showError(e.message); }
+}
+async function claimAppt(id) {
+  const a = appointments.find(x => x.id === id); if (!a || !me) return;
+  try {
+    if (DB) await db(`UPDATE app_elder_care__appointments SET accompanied_by_id = ?, accompanied_by_name = ? WHERE id = ?`, [me.id, me.name, id]);
+    a.accompanied_by_id = me.id; a.accompanied_by_name = me.name; render();
+  } catch (e) { showError(e.message); }
+}
+async function deleteAppt(id) {
+  if (!(await hubConfirm({ message: "Remove this appointment?", destructive: true, confirmLabel: "Remove" }))) return;
+  try {
+    if (DB) await db(`DELETE FROM app_elder_care__appointments WHERE id = ?`, [id]);
+    appointments = appointments.filter(x => x.id !== id); render();
+  } catch (e) { showError(e.message); }
+}
+
+/* ── observations ── */
+function obsModal() {
+  openModal(`
+    <h2>Log an observation</h2>
+    <form class="form" id="obs-form">
+      <div class="field"><label for="o-cat">Category</label><select id="o-cat">${CATEGORIES.map(c => `<option value="${c.id}">${c.label}</option>`).join("")}</select></div>
+      <div class="field"><label for="o-note">What did you notice?</label><textarea id="o-note" placeholder="Share what the care circle should know" data-autofocus required></textarea></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+        <button type="submit" class="btn">Post</button>
+      </div>
+    </form>`);
+}
+async function submitObs(form) {
+  const note = form["o-note"].value.trim(); if (!note) { form["o-note"].focus(); return; }
+  const btn = modalEl.querySelector(".btn[type=submit]"); btn.disabled = true; btn.textContent = "Posting…";
+  const row = { id: uid("o"), member_id: me.id, member_name: me.name, category: form["o-cat"].value, note, observed_at: nowIso(), created_at: nowIso() };
+  try {
+    if (DB) await db(`INSERT INTO app_elder_care__observations (id, member_id, member_name, category, note, observed_at, created_at) VALUES (?,?,?,?,?,?,?)`,
+      [row.id, row.member_id, row.member_name, row.category, row.note, row.observed_at, row.created_at]);
+    observations = [row, ...observations];
+    closeModal(); render();
+  } catch (e) { btn.disabled = false; btn.textContent = "Post"; showError(e.message); }
+}
+async function deleteObs(id) {
+  if (!(await hubConfirm({ message: "Delete this note?", destructive: true, confirmLabel: "Delete" }))) return;
+  try {
+    if (DB) await db(`DELETE FROM app_elder_care__observations WHERE id = ?`, [id]);
+    observations = observations.filter(x => x.id !== id); render();
+  } catch (e) { showError(e.message); }
+}
+
+/* ── render ── */
+function showError(msg) { error = msg; render(); }
+function avatar(id, name) { return `<span class="avatar" style="background:${esc(memberColor(id, members))}">${esc(initial(name))}</span>`; }
+
+function renderSchedule() {
+  const upcoming = visits.filter(v => v.date >= today());
+  const list = (upcoming.length ? upcoming : visits);
+  return `
+    <div class="section-head"><h2>Visit rotation</h2>${canEdit() ? `<button class="btn btn-sm" data-add="visit">Schedule</button>` : ""}</div>
+    <div class="stack">
+      ${list.length ? list.map(v => `
+        <div class="card row-card">
+          <div>
+            <div class="who">${avatar(v.member_id, v.member_name)}<strong>${esc(v.member_name)}</strong></div>
+            <div class="meta">${esc(fmtDate(v.date))}${v.time ? ` · ${esc(v.time)}` : ""}${v.note ? ` — ${esc(v.note)}` : ""}</div>
+          </div>
+          ${canEdit() ? `<button class="btn btn-ghost btn-sm" data-del-visit="${esc(v.id)}">Remove</button>` : ""}
+        </div>`).join("") : `<div class="card empty">No visits scheduled yet.</div>`}
+    </div>`;
+}
+
+function renderTasks() {
+  const open = tasks.filter(t => t.status !== "done");
+  const done = tasks.filter(t => t.status === "done");
+  const card = t => `
+    <div class="card row-card ${t.status === "done" ? "done" : ""}">
+      <div style="flex:1">
+        <label style="display:flex;gap:9px;align-items:flex-start;text-transform:none;letter-spacing:0;font-weight:400;cursor:pointer">
+          <input type="checkbox" style="width:auto;margin-top:3px" ${t.status === "done" ? "checked" : ""} ${canEdit() ? "" : "disabled"} data-toggle="${esc(t.id)}">
+          <span>
+            <span class="task-title" style="font-weight:700">${esc(t.title)}</span>
+            ${t.detail ? `<div class="meta">${esc(t.detail)}</div>` : ""}
+            <div class="meta">${t.assignee_name ? `${esc(t.assignee_name)}` : "Unassigned"}${t.due_date ? ` · due ${esc(fmtDate(t.due_date))}` : ""}</div>
+          </span>
+        </label>
+      </div>
+      ${canEdit() ? `<button class="btn btn-ghost btn-sm" data-del-task="${esc(t.id)}">✕</button>` : ""}
+    </div>`;
+  return `
+    <div class="section-head"><h2>Care tasks</h2>${canEdit() ? `<button class="btn btn-sm" data-add="task">New task</button>` : ""}</div>
+    <div class="stack">
+      ${open.length ? open.map(card).join("") : `<div class="card empty">No open tasks. 🎉</div>`}
+      ${done.length ? `<div class="section-head" style="margin-top:8px"><h3 class="muted">Done</h3></div>${done.map(card).join("")}` : ""}
+    </div>`;
+}
+
+function renderAppointments() {
+  const upcoming = appointments.filter(a => a.date >= today());
+  const list = upcoming.length ? upcoming : appointments;
+  return `
+    <div class="section-head"><h2>Appointments</h2>${canEdit() ? `<button class="btn btn-sm" data-add="appt">Add</button>` : ""}</div>
+    <div class="stack">
+      ${list.length ? list.map(a => `
+        <div class="card stack" style="gap:8px">
+          <div class="row-card">
+            <div>
+              <strong>${esc(a.title)}</strong>
+              <div class="meta">${esc(fmtDate(a.date))}${a.time ? ` · ${esc(a.time)}` : ""}${a.provider ? ` · ${esc(a.provider)}` : ""}</div>
+              ${a.location ? `<div class="meta">📍 ${esc(a.location)}</div>` : ""}
+              ${a.notes ? `<div class="meta">${esc(a.notes)}</div>` : ""}
+            </div>
+            ${canEdit() ? `<button class="btn btn-ghost btn-sm" data-del-appt="${esc(a.id)}">Remove</button>` : ""}
+          </div>
+          <div class="actions">
+            ${a.accompanied_by_id
+              ? `<span class="pill info">${esc(a.accompanied_by_name)} is taking them</span>`
+              : `<span class="pill warn">No one assigned</span>${canEdit() ? `<button class="btn btn-ghost btn-sm" data-claim="${esc(a.id)}">I'll take them</button>` : ""}`}
+          </div>
+        </div>`).join("") : `<div class="card empty">No appointments yet.</div>`}
+    </div>`;
+}
+
+function renderLog() {
+  return `
+    <div class="section-head"><h2>Observation log</h2>${canEdit() ? `<button class="btn btn-sm" data-add="obs">Log note</button>` : ""}</div>
+    <div class="stack">
+      ${observations.length ? observations.map(o => { const c = catOf(o.category); return `
+        <div class="card row-card">
+          <div>
+            <div class="who">${avatar(o.member_id, o.member_name)}<strong>${esc(o.member_name)}</strong> <span class="pill ${c.cls}">${esc(c.label)}</span></div>
+            <div style="margin-top:6px">${esc(o.note)}</div>
+            <div class="meta">${esc(fmtWhen(o.observed_at))}</div>
+          </div>
+          ${canEdit() ? `<button class="btn btn-ghost btn-sm" data-del-obs="${esc(o.id)}">✕</button>` : ""}
+        </div>`; }).join("") : `<div class="card empty">No observations logged yet.</div>`}
+    </div>`;
+}
+
+const TABS = [
+  { id: "schedule", label: "Schedule" },
+  { id: "tasks", label: "Tasks" },
+  { id: "appointments", label: "Appointments" },
+  { id: "log", label: "Log" },
+];
+
+function render() {
+  const root = document.getElementById("root");
+  root.className = "app-root";
+  const body = tab === "schedule" ? renderSchedule() : tab === "tasks" ? renderTasks() : tab === "appointments" ? renderAppointments() : renderLog();
+  root.innerHTML = `
+    <div class="topbar">
+      <div><h1>🧓 Elder Care</h1><p class="muted tiny">Coordinate care for someone you love.</p></div>
+    </div>
+    ${error ? `<div class="error">${esc(error)}</div>` : ""}
+    <div class="tabs">${TABS.map(t => `<button class="tab ${tab === t.id ? "active" : ""}" data-tab="${t.id}">${t.label}</button>`).join("")}</div>
+    ${body}`;
+}
+
+document.addEventListener("click", e => {
+  const t = e.target.closest("button, [data-tab]");
+  if (!t) return;
+  if (t.dataset.tab) { tab = t.dataset.tab; error = ""; render(); return; }
+  if (t.dataset.close !== undefined) { closeModal(); return; }
+  const add = t.dataset.add;
+  if (add === "visit") return visitModal();
+  if (add === "task") return taskModal();
+  if (add === "appt") return apptModal();
+  if (add === "obs") return obsModal();
+  if (t.dataset.toggle) return toggleTask(t.dataset.toggle);
+  if (t.dataset.delTask) return deleteTask(t.dataset.delTask);
+  if (t.dataset.delVisit) return deleteVisit(t.dataset.delVisit);
+  if (t.dataset.delAppt) return deleteAppt(t.dataset.delAppt);
+  if (t.dataset.delObs) return deleteObs(t.dataset.delObs);
+  if (t.dataset.claim) return claimAppt(t.dataset.claim);
+});
+
+document.addEventListener("change", e => {
+  const cb = e.target.closest("[data-toggle]");
+  if (cb) toggleTask(cb.dataset.toggle);
+});
+
+document.addEventListener("submit", e => {
+  e.preventDefault();
+  const id = e.target.id;
+  if (id === "visit-form") submitVisit(e.target);
+  else if (id === "task-form") submitTask(e.target);
+  else if (id === "appt-form") submitAppt(e.target);
+  else if (id === "obs-form") submitObs(e.target);
+});
+
+async function deleteVisit(id) {
+  if (!(await hubConfirm({ message: "Remove this visit?", destructive: true, confirmLabel: "Remove" }))) return;
+  try {
+    if (DB) await db(`DELETE FROM app_elder_care__visits WHERE id = ?`, [id]);
+    visits = visits.filter(x => x.id !== id); render();
+  } catch (e) { showError(e.message); }
+}
+
+init();
+</script>
+</body>
+</html>
