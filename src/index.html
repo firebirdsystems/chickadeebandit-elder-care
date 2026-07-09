@@ -81,6 +81,10 @@
 
 <script type="module">
 import { esc, isAdult, memberColor, initial, hubConfirm } from "/hub-sdk.js";
+import {
+  CATEGORIES, fmtDate, fmtWhen, memberName as memberNameOf, catOf,
+  scheduleList, appointmentList, openTasks, doneTasks,
+} from "./logic.js";
 
 const CONTEXT = window.__CONTEXT_URL ?? "";
 const DB = window.__DB_URL ?? "";
@@ -94,21 +98,11 @@ let tab = "schedule";
 let error = "";
 let modalEl = null;
 
-const CATEGORIES = [
-  { id: "general", label: "General", cls: "info" },
-  { id: "health", label: "Health", cls: "warn" },
-  { id: "mood", label: "Mood", cls: "mood" },
-  { id: "meds", label: "Medication", cls: "good" },
-];
-
 function nowIso() { return new Date().toISOString(); }
 function uid(p) { return `${p}-${crypto.randomUUID()}`; }
 function today() { return new Date().toISOString().slice(0, 10); }
-function fmtDate(v) { if (!v) return ""; return new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric" }).format(new Date(`${v}T12:00:00`)); }
-function fmtWhen(iso) { if (!iso) return ""; return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(iso)); }
-function memberName(id) { return memberMap.get(id)?.name ?? "Someone"; }
+function memberName(id) { return memberNameOf(memberMap, id); }
 function canEdit() { return isAdult(me); }
-function catOf(id) { return CATEGORIES.find(c => c.id === id) ?? CATEGORIES[0]; }
 
 async function db(sql, params = []) {
   if (!DB) return { rows: [] };
@@ -355,8 +349,7 @@ function showError(msg) { error = msg; render(); }
 function avatar(id, name) { return `<span class="avatar" style="background:${esc(memberColor(id, members))}">${esc(initial(name))}</span>`; }
 
 function renderSchedule() {
-  const upcoming = visits.filter(v => v.date >= today());
-  const list = (upcoming.length ? upcoming : visits);
+  const list = scheduleList(visits, today());
   return `
     <div class="section-head"><h2>Visit rotation</h2>${canEdit() ? `<button class="btn btn-sm" data-add="visit">Schedule</button>` : ""}</div>
     <div class="stack">
@@ -372,8 +365,8 @@ function renderSchedule() {
 }
 
 function renderTasks() {
-  const open = tasks.filter(t => t.status !== "done");
-  const done = tasks.filter(t => t.status === "done");
+  const open = openTasks(tasks);
+  const done = doneTasks(tasks);
   const card = t => `
     <div class="card row-card ${t.status === "done" ? "done" : ""}">
       <div style="flex:1">
@@ -397,8 +390,7 @@ function renderTasks() {
 }
 
 function renderAppointments() {
-  const upcoming = appointments.filter(a => a.date >= today());
-  const list = upcoming.length ? upcoming : appointments;
+  const list = appointmentList(appointments, today());
   return `
     <div class="section-head"><h2>Appointments</h2>${canEdit() ? `<button class="btn btn-sm" data-add="appt">Add</button>` : ""}</div>
     <div class="stack">
