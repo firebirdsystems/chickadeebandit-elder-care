@@ -1,7 +1,7 @@
 {
   "id": "elder-care",
   "name": "Elder Care",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Coordinate care for a loved one: a visit rotation, shared care tasks, appointment notes, and an observation log the whole care circle can see.",
   "entrypoint": "index.html",
   "runtime": "static",
@@ -26,6 +26,24 @@
   },
   "publishes": ["elder_care.visit_scheduled", "elder_care.task_created", "elder_care.appointment_added"],
   "nav": { "label": "Elder Care" },
+  "agenda": [
+    {
+      "kind": "event",
+      "label": "Elder Care · Appointment",
+      "source": {
+        "kind": "sql",
+        "query": "SELECT id AS id, title AS title, CASE WHEN time = '' THEN date ELSE date || 'T' || time END AS when_at, NULLIF(provider, '') AS subtitle, NULLIF(accompanied_by_id, '') AS member_id FROM app_elder_care__appointments WHERE date = :today ORDER BY time LIMIT 20"
+      }
+    },
+    {
+      "kind": "task",
+      "label": "Elder Care · Task",
+      "source": {
+        "kind": "sql",
+        "query": "SELECT id AS id, title AS title, due_date AS when_at, (status = 'done') AS done, NULLIF(detail, '') AS subtitle, NULLIF(assignee_id, '') AS member_id FROM app_elder_care__tasks WHERE due_date = :today ORDER BY status, created_at LIMIT 20"
+      }
+    }
+  ],
   "glance": {
     "source": {
       "kind": "sql",
