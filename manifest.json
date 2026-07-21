@@ -10,6 +10,7 @@
   "tags": ["elder-care", "caregiving", "coordination", "family", "appointments"],
   "storage": "db",
   "db_plaintext_columns": ["category", "status", "date", "time"],
+  "contexts": ["household", "shared_space"],
   "data_access": {
     "reads": ["family.members"],
     "writes": []
