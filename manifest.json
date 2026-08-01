@@ -25,7 +25,48 @@
     "appointments": { "kind": "adult_writable" },
     "observations": { "kind": "adult_writable" }
   },
+  "member_references": {
+    "visits": [
+      {
+        "column": "member_id",
+        "on_removed": "keep"
+      },
+      {
+        "column": "created_by",
+        "on_removed": "keep"
+      }
+    ],
+    "tasks": [
+      {
+        "column": "assignee_id",
+        "on_removed": "null"
+      },
+      {
+        "column": "created_by",
+        "on_removed": "keep"
+      }
+    ],
+    "appointments": [
+      {
+        "column": "created_by",
+        "on_removed": "keep"
+      },
+      {
+        "column": "accompanied_by_id",
+        "on_removed": "null"
+      }
+    ],
+    "observations": {
+      "column": "member_id",
+      "on_removed": "keep"
+    }
+  },
   "publishes": ["elder_care.visit_scheduled", "elder_care.task_created", "elder_care.appointment_added"],
+  "publish_acls": {
+    "elder_care.visit_scheduled": { "require_role": "adult" },
+    "elder_care.task_created": { "require_role": "adult" },
+    "elder_care.appointment_added": { "require_role": "adult" }
+  },
   "nav": { "label": "Elder Care" },
   "agenda": [
     {
