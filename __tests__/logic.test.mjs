@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   CATEGORIES, fmtDate, fmtWhen, memberName, catOf,
-  scheduleList, appointmentList, openTasks, doneTasks,
+  scheduleList, appointmentList, openTasks, doneTasks, searchableFields,
 } from "../src/logic.js";
 
 describe("fmtDate / fmtWhen", () => {
@@ -47,5 +47,14 @@ describe("openTasks / doneTasks", () => {
   it("splits by done status", () => {
     expect(openTasks(tasks).map(t => t.id)).toEqual(["1", "3"]);
     expect(doneTasks(tasks).map(t => t.id)).toEqual(["2"]);
+  });
+});
+
+describe("searchableFields", () => {
+  it("matches on the note body and who observed it", () => {
+    const fields = searchableFields({ note: "dizzy standing up after lunch", category: "health", member_name: "Ada" });
+    expect(fields).toContain("dizzy standing up after lunch");
+    expect(fields).toContain("Ada");
+    expect(fields).toContain("health");
   });
 });

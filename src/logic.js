@@ -45,3 +45,13 @@ export function openTasks(tasks) {
 export function doneTasks(tasks) {
   return tasks.filter(t => t.status === "done");
 }
+
+/**
+ * Fields the in-app search matches against (see hub-sdk `searchMatch`).
+ * Category and observer are searchable alongside the note itself, so
+ * a care log answers "what did Ada notice about sleep" — the question
+ * a running log actually gets asked.
+ */
+export function searchableFields(item) {
+  return [item.note, item.category, item.member_name];
+}
