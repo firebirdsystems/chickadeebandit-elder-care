@@ -61,6 +61,48 @@
       "on_removed": "keep"
     }
   },
+  "automation_actions": {
+    "add_task": {
+      "title": "Add a care task",
+      "description": "File a task for the care circle when another app records something that needs following up — a prescription to collect, a form to return, a follow-up after an appointment.",
+      "params": {
+        "title": { "type": "text", "label": "Task", "required": true },
+        "detail": { "type": "text", "label": "Detail", "default": "" },
+        "due_date": { "type": "text", "label": "Due (yyyy-mm-dd)", "default": "" }
+      },
+      "dedupe": { "table": "tasks", "column": "source_event_id" },
+      "steps": [
+        {
+          "op": "insert",
+          "table": "tasks",
+          "values": {
+            "id": "$uuid",
+            "title": ":title",
+            "detail": ":detail",
+            "due_date": ":due_date",
+            "status": "open",
+            "created_by": "automation",
+            "created_by_name": "Automation",
+            "created_at": "$now",
+            "source_event_id": "$event_id"
+          }
+        }
+      ]
+    }
+  },
+  "suggested_automations": [
+    {
+      "title": "File a care task when an appointment goes on the calendar",
+      "description": "An appointment usually carries a chore with it — confirm the ride, collect the paperwork. The task lands unassigned so whoever picks it up claims it themselves rather than being volunteered by a rule.",
+      "trigger_event": "calendar.event_created",
+      "target_app_id": "elder-care",
+      "action_id": "add_task",
+      "param_map": {
+        "title": { "kind": "payload_field", "value": "title" },
+        "detail": { "kind": "const", "value": "Follow up before this date — confirm transport and paperwork." }
+      }
+    }
+  ],
   "publishes": ["elder_care.visit_scheduled", "elder_care.task_created", "elder_care.appointment_added"],
   "publish_acls": {
     "elder_care.visit_scheduled": { "require_role": "adult" },
