@@ -90,7 +90,7 @@
 import { esc, isAdult, memberColor, initial, hubConfirm, searchMatch } from "/hub-sdk.js";
 import {
   CATEGORIES, fmtDate, fmtWhen, memberName as memberNameOf, catOf,
-  scheduleList, appointmentList, openTasks, doneTasks, searchableFields,
+  scheduleList, appointmentList, openTasks, doneTasks, searchableFields, calendarRef,
 } from "./logic.js";
 
 const CONTEXT = window.__CONTEXT_URL ?? "";
@@ -169,9 +169,42 @@ async function init() {
   catch (e) { error = e.message; render(); }
 }
 
+function postEvent(type, payload) {
+  return fetch(EVENTS_URL, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_app_id: APP_ID, type, payload }) });
+}
+
+/**
+ * Announcements. Fire-and-forget on purpose: a dropped `..._added` costs a
+ * calendar entry that was never made, and the row is here to be seen either
+ * way. Nothing downstream is left saying something untrue.
+ */
 function publish(type, payload) {
-  fetch(EVENTS_URL, { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ source_app_id: APP_ID, type, payload }) }).catch(() => {});
+  postEvent(type, payload).catch(() => {});
+}
+
+/**
+ * Retractions, which are NOT interchangeable with the above. A dropped
+ * retraction leaves a calendar entry telling whoever is driving to be
+ * somewhere for an appointment that no longer exists — the exact failure the
+ * retraction exists to prevent, and one nothing else will ever notice, because
+ * the row it disagreed with is gone. So: awaited, retried once (the usual
+ * cause is a transient network blip on a page that is about to be closed), and
+ * on final failure said out loud, since a person who knows the calendar is
+ * stale can go clear it and a person who doesn't cannot.
+ */
+async function publishRetraction(type, payload) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await postEvent(type, payload);
+      if (res.ok) return true;
+      // 4xx is a verdict, not a blip — the ACL rejected us, or the payload is
+      // wrong. Retrying sends the identical request to the identical answer.
+      if (res.status < 500) break;
+    } catch { /* network failure — worth the one retry below */ }
+  }
+  showError("Removed here, but the calendar entry it created could not be taken down. Check the calendar.");
+  return false;
 }
 
 /* ── modal ── */
@@ -218,7 +251,9 @@ async function submitVisit(form) {
       [row.id, row.date, row.time, row.member_id, row.member_name, row.note, row.created_by, row.created_at]);
     visits = [...visits, row].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
     closeModal(); render();
-    publish("elder_care.visit_scheduled", { date: row.date, member_id: row.member_id });
+    publish("elder_care.visit_scheduled", {
+      date: row.date, member_id: row.member_id, source_ref_id: calendarRef("visit", row.id),
+    });
   } catch (e) { btn.disabled = false; btn.textContent = "Schedule"; showError(e.message); }
 }
 
@@ -302,7 +337,9 @@ async function submitAppt(form) {
       [row.id, row.title, row.provider, row.date, row.time, row.location, row.accompanied_by_id, row.accompanied_by_name, row.notes, row.created_by, row.created_at]);
     appointments = [...appointments, row].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
     closeModal(); render();
-    publish("elder_care.appointment_added", { title: row.title, date: row.date });
+    publish("elder_care.appointment_added", {
+      title: row.title, date: row.date, source_ref_id: calendarRef("appt", row.id),
+    });
   } catch (e) { btn.disabled = false; btn.textContent = "Add"; showError(e.message); }
 }
 async function claimAppt(id) {
@@ -317,7 +354,15 @@ async function deleteAppt(id) {
   try {
     if (DB) await db(`DELETE FROM app_elder_care__appointments WHERE id = ?`, [id]);
     appointments = appointments.filter(x => x.id !== id); render();
-  } catch (e) { showError(e.message); }
+  } catch (e) { showError(e.message); return; }
+  // After the row is gone, so a failed delete never retracts an entry for an
+  // appointment that is still here. Carries the same reference the announcement
+  // did — that is what lets a rule find the one calendar entry this made.
+  //
+  // Deliberately NOT behind `if (DB)`: the announcement in submitAppt is not
+  // either, so a context with no database still produced a calendar entry, and
+  // that entry still needs taking down.
+  await publishRetraction("elder_care.appointment_cancelled", { source_ref_id: calendarRef("appt", id) });
 }
 
 /* ── observations ── */
@@ -518,7 +563,10 @@ async function deleteVisit(id) {
   try {
     if (DB) await db(`DELETE FROM app_elder_care__visits WHERE id = ?`, [id]);
     visits = visits.filter(x => x.id !== id); render();
-  } catch (e) { showError(e.message); }
+  } catch (e) { showError(e.message); return; }
+  // Same ordering and the same unconditional publish as the appointment
+  // path above, for the same reasons.
+  await publishRetraction("elder_care.visit_cancelled", { source_ref_id: calendarRef("visit", id) });
 }
 
 init();

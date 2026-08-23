@@ -47,6 +47,24 @@ export function doneTasks(tasks) {
 }
 
 /**
+ * Steady identity for whatever another app derives from one of our rows — in
+ * practice a calendar entry made by an automation rule.
+ *
+ * The triggering event's own id cannot serve: it is fresh on every publish, so
+ * it can say "this is a new event" but never "this is the same appointment as
+ * last time". A rule keyed on it can only ever insert, which is why removing an
+ * appointment used to leave its calendar entry standing forever — nothing named
+ * the entry to take it back down.
+ *
+ * Namespaced by app AND by kind: the key shares one column with every other
+ * publisher's, and visits and appointments have independent id spaces of their
+ * own, so `elder-care:visit:v1` and `elder-care:appt:v1` must not collide.
+ */
+export function calendarRef(kind, id) {
+  return `elder-care:${kind}:${id}`;
+}
+
+/**
  * Fields the in-app search matches against (see hub-sdk `searchMatch`).
  * Category and observer are searchable alongside the note itself, so
  * a care log answers "what did Ada notice about sleep" — the question

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   CATEGORIES, fmtDate, fmtWhen, memberName, catOf,
-  scheduleList, appointmentList, openTasks, doneTasks, searchableFields,
+  scheduleList, appointmentList, openTasks, doneTasks, searchableFields, calendarRef,
 } from "../src/logic.js";
 
 describe("fmtDate / fmtWhen", () => {
@@ -56,5 +56,19 @@ describe("searchableFields", () => {
     expect(fields).toContain("dizzy standing up after lunch");
     expect(fields).toContain("Ada");
     expect(fields).toContain("health");
+  });
+});
+
+describe("calendarRef", () => {
+  it("namespaces by app and by kind", () => {
+    // The key shares one column with every other publisher's, and visits and
+    // appointments have independent id spaces — `v1` can exist in both.
+    expect(calendarRef("appt", "a1")).toBe("elder-care:appt:a1");
+    expect(calendarRef("visit", "a1")).toBe("elder-care:visit:a1");
+    expect(calendarRef("appt", "x")).not.toBe(calendarRef("visit", "x"));
+  });
+
+  it("is stable for the same row, so an announcement and its retraction agree", () => {
+    expect(calendarRef("appt", "a1")).toBe(calendarRef("appt", "a1"));
   });
 });

@@ -1,7 +1,7 @@
 {
   "id": "elder-care",
   "name": "Elder Care",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Coordinate care for a loved one: a visit rotation, shared care tasks, appointment notes, and an observation log the whole care circle can see.",
   "entrypoint": "index.html",
   "runtime": "static",
@@ -103,11 +103,19 @@
       }
     }
   ],
-  "publishes": ["elder_care.visit_scheduled", "elder_care.task_created", "elder_care.appointment_added"],
+  "publishes": [
+    "elder_care.visit_scheduled",
+    "elder_care.visit_cancelled",
+    "elder_care.task_created",
+    "elder_care.appointment_added",
+    "elder_care.appointment_cancelled"
+  ],
   "publish_acls": {
     "elder_care.visit_scheduled": { "require_role": "adult" },
+    "elder_care.visit_cancelled": { "require_role": "adult" },
     "elder_care.task_created": { "require_role": "adult" },
-    "elder_care.appointment_added": { "require_role": "adult" }
+    "elder_care.appointment_added": { "require_role": "adult" },
+    "elder_care.appointment_cancelled": { "require_role": "adult" }
   },
   "nav": { "label": "Elder Care" },
   "agenda": [

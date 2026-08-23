@@ -40,6 +40,88 @@ describe("manifest.json", () => {
   });
 });
 
+// ── retraction ────────────────────────────────────────────────────────────────
+//
+// Appointments and visits can be removed but not rescheduled, so the way a
+// calendar entry made from one goes stale is deletion: the appointment is gone
+// and the entry still tells whoever is driving to be somewhere on Tuesday. The
+// calendar's `retract_dated_event` takes it back down, scoped by the reference
+// the announcement carried — so announcing and retracting MUST agree on that
+// reference, and both must actually be published.
+describe("cancellation events", () => {
+  const indexHtml = readFileSync(join(__dirname, "../src/index.html"), "utf-8");
+
+  it("declares a cancellation event for each dated thing it announces, adults only", () => {
+    for (const type of ["elder_care.appointment_cancelled", "elder_care.visit_cancelled"]) {
+      expect(manifest.publishes).toContain(type);
+      // These drive a trusted write in another app (hiding a calendar entry),
+      // so a child must not be able to POST a fabricated one. Matches the ACL
+      // on the announcement each retracts.
+      expect(manifest.publish_acls[type]).toEqual({ require_role: "adult" });
+    }
+  });
+
+  it("announces and retracts under the same reference", () => {
+    // Namespaced by app AND kind: the column is shared with every other
+    // publisher, and visits and appointments have separate id spaces.
+    expect(indexHtml).toContain('calendarRef("appt", row.id)');
+    expect(indexHtml).toContain('calendarRef("appt", id)');
+    expect(indexHtml).toContain('calendarRef("visit", row.id)');
+    expect(indexHtml).toContain('calendarRef("visit", id)');
+  });
+
+  /**
+   * One function's source, from its `async function` line to the closing brace
+   * in column 0. Bounding this matters more than it looks: an earlier version
+   * sliced to end-of-file, so deleting deleteAppt's retraction entirely left
+   * the test matching deleteVisit's — the guard passed on the code of the
+   * function it was not guarding.
+   */
+  function functionBody(name) {
+    const start = indexHtml.indexOf(`async function ${name}(`);
+    expect(start, `${name} must exist`).toBeGreaterThan(-1);
+    const end = indexHtml.indexOf("\n}\n", start);
+    expect(end, `${name} must be brace-terminated in column 0`).toBeGreaterThan(start);
+    return indexHtml.slice(start, end);
+  }
+
+  it("scopes each delete function's body to itself", () => {
+    // Guards the guard: if functionBody ever over-reads again, these fail
+    // rather than silently widening every assertion built on it.
+    expect(functionBody("deleteAppt")).not.toContain("deleteVisit");
+    expect(functionBody("deleteVisit")).not.toContain("deleteAppt");
+    expect(functionBody("deleteAppt")).not.toContain("elder_care.visit_cancelled");
+    expect(functionBody("deleteVisit")).not.toContain("elder_care.appointment_cancelled");
+  });
+
+  it("publishes the retraction only after the row is really gone", () => {
+    // A retraction sent before the DELETE commits would hide the calendar entry
+    // for an appointment that is still in the app — worse than the stale entry
+    // it exists to prevent, because nothing would ever put it back.
+    for (const [fn, type] of [["deleteAppt", "appointment_cancelled"], ["deleteVisit", "visit_cancelled"]]) {
+      const body = functionBody(fn);
+      const catchAt = body.indexOf("catch (e)");
+      const publishAt = body.indexOf(`publishRetraction("elder_care.${type}"`);
+      expect(catchAt, `${fn} must handle a failed delete`).toBeGreaterThan(-1);
+      expect(publishAt, `${fn} must publish its own retraction`).toBeGreaterThan(-1);
+      expect(publishAt, `${fn} must publish after the catch, not inside the try`).toBeGreaterThan(catchAt);
+      // And the catch must return, or a failed delete would fall through to it.
+      expect(body.slice(catchAt, publishAt)).toMatch(/return;/);
+    }
+  });
+
+  it("uses the retracting publish lane, not the fire-and-forget one", () => {
+    // `publish` swallows every failure. That is right for an announcement and
+    // wrong for a retraction: the dropped one leaves a calendar entry standing
+    // for something that no longer exists, and nothing else would ever catch it.
+    for (const fn of ["deleteAppt", "deleteVisit"]) {
+      const body = functionBody(fn);
+      expect(body, `${fn} must await its retraction`).toContain("await publishRetraction(");
+      expect(body.replace(/publishRetraction\(/g, ""), `${fn} must not fire-and-forget`).not.toMatch(/\bpublish\(/);
+    }
+  });
+});
+
 // ── ai_access SQL file validation ─────────────────────────────────────────────
 // Auto-discovers all db_exports/db_mutations/db_inserts/db_deletes entries and
 // validates each SQL file for type, household_id filter, and single-statement.
