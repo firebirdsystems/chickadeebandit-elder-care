@@ -87,7 +87,7 @@
 <div class="app"><div id="root" class="loading">Loading…</div></div>
 
 <script type="module">
-import { esc, isAdult, memberColor, initial, hubConfirm, searchMatch } from "/hub-sdk.js";
+import { esc, isAdult, memberColor, initial, hubConfirm, searchMatch, hubToday as today } from "/hub-sdk.js";
 import {
   CATEGORIES, fmtDate, fmtWhen, memberName as memberNameOf, catOf,
   scheduleList, appointmentList, openTasks, doneTasks, searchableFields, calendarRef,
@@ -108,7 +108,6 @@ let modalEl = null;
 
 function nowIso() { return new Date().toISOString(); }
 function uid(p) { return `${p}-${crypto.randomUUID()}`; }
-function today() { return new Date().toISOString().slice(0, 10); }
 function memberName(id) { return memberNameOf(memberMap, id); }
 function canEdit() { return isAdult(me); }
 
