@@ -10,10 +10,10 @@
   "tags": ["elder-care", "caregiving", "coordination", "family", "appointments"],
   "storage": "db",
   "preload": {
-    "visits": {"sql": "SELECT * FROM app_elder_care__visits ORDER BY date ASC, time ASC"},
-    "tasks": {"sql": "SELECT * FROM app_elder_care__tasks ORDER BY (status = 'done'), (due_date = ''), due_date ASC, created_at DESC"},
-    "appointments": {"sql": "SELECT * FROM app_elder_care__appointments ORDER BY date ASC, time ASC"},
-    "observations": {"sql": "SELECT * FROM app_elder_care__observations ORDER BY observed_at DESC"}
+    "visits": {"sql": "SELECT * FROM app_elder_care__visits WHERE date >= date(?, '-30 days') ORDER BY date ASC, time ASC", "params": [":today"]},
+    "tasks": {"sql": "SELECT * FROM app_elder_care__tasks WHERE completed_at = '' OR completed_at >= date(?, '-120 days') ORDER BY (status = 'done'), (due_date = ''), due_date ASC, created_at DESC", "params": [":today"]},
+    "appointments": {"sql": "SELECT * FROM app_elder_care__appointments WHERE date >= date(?, '-30 days') ORDER BY date ASC, time ASC", "params": [":today"]},
+    "observations": {"sql": "SELECT * FROM app_elder_care__observations WHERE observed_at >= date(?, '-120 days') ORDER BY observed_at DESC", "params": [":today"]}
   },
   "db_plaintext_columns": ["category", "status", "date", "time"],
   "contexts": ["household", "shared_space"],

@@ -154,13 +154,62 @@ function seedDemo() {
 
 async function loadData() {
   if (!DB) { seedDemo(); return; }
+  // Each read is windowed so the per-launch scan stays bounded as years of
+  // care history accrue. Visits/appointments keep 30 days of past rows so the
+  // no-upcoming fallback still shows something recent; tasks keep every open
+  // row (completed_at = '') plus 120 days of completed ones; observations keep
+  // a 120-day feed. The date param is the household-local day so the hub's
+  // `:today` preload binding matches this text.
   const [v, t, a, o] = await Promise.all([
+    db("SELECT * FROM app_elder_care__visits WHERE date >= date(?, '-30 days') ORDER BY date ASC, time ASC", [today()]),
+    db("SELECT * FROM app_elder_care__tasks WHERE completed_at = '' OR completed_at >= date(?, '-120 days') ORDER BY (status = 'done'), (due_date = ''), due_date ASC, created_at DESC", [today()]),
+    db("SELECT * FROM app_elder_care__appointments WHERE date >= date(?, '-30 days') ORDER BY date ASC, time ASC", [today()]),
+    db("SELECT * FROM app_elder_care__observations WHERE observed_at >= date(?, '-120 days') ORDER BY observed_at DESC", [today()]),
+  ]);
+  visits = v.rows; tasks = t.rows; appointments = a.rows; observations = o.rows;
+}
+
+// ── Earlier history ────────────────────────────────────────────────────────
+//
+// The windows above bound the LAUNCH read; they must not bound what the family
+// can see. None of these tables declares retain_days, so every row older than
+// its window is still stored — it was simply unreachable, with nothing on
+// screen saying so. In a care app that is the wrong trade to make silently: the
+// observation log and the visit history are exactly the record someone goes
+// back through to answer "when did this start?" or "how often did we come?".
+//
+// So the older rows load on demand: when a person asks for them, and whenever
+// the observation search runs — search matches note text, which is encrypted at
+// rest and can only be compared client-side, so a windowed search would quietly
+// answer "no results" about records that exist. The promise is the guard, so
+// repeated keystrokes cannot start a second read.
+let historyLoaded = false;
+let historyError = false;
+let historyPromise = null;
+function loadFullHistory() {
+  if (!DB || historyLoaded) return Promise.resolve();
+  historyPromise ??= Promise.all([
     db("SELECT * FROM app_elder_care__visits ORDER BY date ASC, time ASC"),
     db("SELECT * FROM app_elder_care__tasks ORDER BY (status = 'done'), (due_date = ''), due_date ASC, created_at DESC"),
     db("SELECT * FROM app_elder_care__appointments ORDER BY date ASC, time ASC"),
     db("SELECT * FROM app_elder_care__observations ORDER BY observed_at DESC"),
-  ]);
-  visits = v.rows; tasks = t.rows; appointments = a.rows; observations = o.rows;
+  ])
+    .then(([v, t, a, o]) => {
+      // Replace rather than append: these statements are supersets of the
+      // windowed ones and arrive in the same order, so there is no merge to get
+      // wrong and no chance of a duplicate.
+      visits = v.rows; tasks = t.rows; appointments = a.rows; observations = o.rows;
+      historyLoaded = true;
+      historyError = false;
+    })
+    .catch((e) => { historyPromise = null; historyError = true; throw e; });
+  return historyPromise;
+}
+
+function earlierHistoryHtml() {
+  if (historyLoaded) return "";
+  if (historyError) return `<div class="card empty">Earlier history could not be loaded. <button class="btn btn-ghost btn-sm" data-load-history>Try again</button></div>`;
+  return `<button class="btn btn-ghost btn-sm" data-load-history style="width:100%;margin-top:12px">Show earlier history</button>`;
 }
 
 async function init() {
@@ -494,7 +543,8 @@ function renderLog() {
     ${observations.length ? `<div class="search-row"><input id="search" class="search-input" type="search" placeholder="Search observations…" aria-label="Search observations" value="${esc(searchQ)}" /></div>` : ""}
     <div class="stack" id="observation-list">
       ${renderObservationList()}
-    </div>`;
+    </div>
+    ${earlierHistoryHtml()}`;
 }
 
 const TABS = [
@@ -514,13 +564,18 @@ function render() {
     </div>
     ${error ? `<div class="error">${esc(error)}</div>` : ""}
     <div class="tabs">${TABS.map(t => `<button class="tab ${tab === t.id ? "active" : ""}" data-tab="${t.id}">${t.label}</button>`).join("")}</div>
-    ${body}`;
+    ${body}
+    ${tab === "log" ? "" : earlierHistoryHtml()}`;
 }
 
 // Re-render only the list on each keystroke so the search box keeps focus.
 document.addEventListener("input", (e) => {
   if (e.target.id !== "search") return;
   searchQ = e.target.value;
+  // Notes are encrypted at rest, so this match runs client-side over loaded
+  // rows. Searching a windowed set would report "no observations match" about
+  // records that exist, which is a false negative on someone's care record.
+  if (searchQ && !historyLoaded) loadFullHistory().then(render).catch(() => render());
   const el = document.getElementById("observation-list");
   if (el) el.innerHTML = renderObservationList();
 });
@@ -529,6 +584,11 @@ document.addEventListener("click", e => {
   const t = e.target.closest("button, [data-tab]");
   if (!t) return;
   if (t.dataset.tab) { tab = t.dataset.tab; error = ""; render(); return; }
+  if (t.dataset.loadHistory !== undefined) {
+    t.disabled = true; t.textContent = "Loading…";
+    loadFullHistory().then(render).catch(() => render());
+    return;
+  }
   if (t.dataset.close !== undefined) { closeModal(); return; }
   const add = t.dataset.add;
   if (add === "visit") return visitModal();
