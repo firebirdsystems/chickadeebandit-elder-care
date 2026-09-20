@@ -1,5 +1,7 @@
 # Elder Care
 
+A [Chickadee Bandit](https://chickadeebandit.com/app-library/elder-care) app.
+
 The sandwich-generation companion to the family hub: adult siblings (and anyone in the care circle) coordinating care for a parent or loved one.
 
 - **Visit rotation** — who is stopping by and when, so no day goes uncovered.
