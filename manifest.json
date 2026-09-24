@@ -74,7 +74,7 @@
       "params": {
         "title": { "type": "text", "label": "Task", "required": true },
         "detail": { "type": "text", "label": "Detail", "default": "" },
-        "due_date": { "type": "text", "label": "Due (yyyy-mm-dd)", "default": "" }
+        "due_date": { "type": "text", "format": "date", "label": "Due (yyyy-mm-dd)", "default": "" }
       },
       "dedupe": { "table": "tasks", "column": "source_event_id" },
       "steps": [
