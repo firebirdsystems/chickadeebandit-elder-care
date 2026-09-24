@@ -1,0 +1,151 @@
+{
+  "scenarios": [
+    {
+      "name": "the care circle's records are readable by every member but only adults can add, change or remove them",
+      "members": { "parent": "adult", "kid": "child" },
+      "steps": [
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "INSERT INTO app_elder_care__tasks (id, title, detail, status, created_by, created_by_name, created_at) VALUES (?, ?, ?, 'open', ?, ?, ?)",
+          "params": ["t1", "Collect prescription", "Pharmacy on Main St", "{{parent}}", "Parent", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "INSERT INTO app_elder_care__observations (id, member_id, member_name, category, note, observed_at, created_at) VALUES (?, ?, ?, 'mood', ?, ?, ?)",
+          "params": ["o1", "{{parent}}", "Parent", "Cheerful after lunch", "2026-01-02T13:00:00Z", "2026-01-02T13:00:00Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "INSERT INTO app_elder_care__tasks (id, title, status, created_by, created_by_name, created_at) VALUES (?, ?, 'open', ?, ?, ?)",
+          "params": ["t2", "Buy candy", "{{kid}}", "Kid", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "INSERT INTO app_elder_care__observations (id, member_id, member_name, category, note, observed_at, created_at) VALUES (?, ?, ?, 'general', ?, ?, ?)",
+          "params": ["o2", "{{kid}}", "Kid", "Grandma was grumpy", "2026-01-02T14:00:00Z", "2026-01-02T14:00:00Z"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "UPDATE app_elder_care__tasks SET status = 'done' WHERE id = ?",
+          "params": ["t1"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "DELETE FROM app_elder_care__observations WHERE id = ?",
+          "params": ["o1"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "SELECT id, title, status FROM app_elder_care__tasks",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "t1", "title": "Collect prescription", "status": "open" }] }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "SELECT id, note, category FROM app_elder_care__observations",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "o1", "note": "Cheerful after lunch", "category": "mood" }] }
+        }
+      ]
+    },
+    {
+      "name": "any adult in the care circle can reschedule a visit or complete a task another adult created",
+      "members": { "parent": "adult", "sibling": "adult", "kid": "child" },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_elder_care__visits (id, date, time, member_id, member_name, note, created_by, created_at) VALUES ('v1', '2026-02-01', '10:00', ?, 'Parent', 'Bring photos', ?, '2026-01-01T00:00:00Z')",
+          "params": ["{{parent}}", "{{parent}}"]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_elder_care__tasks (id, title, status, created_by, created_by_name, created_at) VALUES ('t1', 'Return insurance form', 'open', ?, 'Parent', '2026-01-01T00:00:00Z')",
+          "params": ["{{parent}}"]
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "UPDATE app_elder_care__visits SET date = '2026-03-01' WHERE id = ?",
+          "params": ["v1"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "UPDATE app_elder_care__visits SET date = '2026-02-02', time = '14:00' WHERE id = ?",
+          "params": ["v1"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "UPDATE app_elder_care__tasks SET status = 'done', completed_at = '2026-01-05T09:00:00Z' WHERE id = ?",
+          "params": ["t1"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "SELECT id, date, time FROM app_elder_care__visits",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "v1", "date": "2026-02-02", "time": "14:00" }] }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "SELECT id, status, completed_at FROM app_elder_care__tasks",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "t1", "status": "done", "completed_at": "2026-01-05T09:00:00Z" }] }
+        }
+      ]
+    },
+    {
+      "name": "only adults can announce care-circle events; a child cannot publish them",
+      "members": { "parent": "adult", "kid": "child" },
+      "steps": [
+        {
+          "action": "publish",
+          "as": "kid",
+          "type": "elder_care.task_created",
+          "subject_id": "t1",
+          "payload": { "title": "Collect prescription" },
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "publish",
+          "as": "kid",
+          "type": "elder_care.appointment_added",
+          "subject_id": "a1",
+          "payload": { "title": "Cardiology check-up", "date": "2026-02-10" },
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "publish",
+          "as": "parent",
+          "type": "elder_care.task_created",
+          "subject_id": "t1",
+          "payload": { "title": "Collect prescription" },
+          "expect": { "status": 201 }
+        },
+        {
+          "action": "publish",
+          "as": "parent",
+          "type": "elder_care.appointment_added",
+          "subject_id": "a1",
+          "payload": { "title": "Cardiology check-up", "date": "2026-02-10" },
+          "expect": { "status": 201 }
+        }
+      ]
+    }
+  ]
+}
