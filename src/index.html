@@ -87,7 +87,7 @@
 <div class="app"><div id="root" class="loading">Loading…</div></div>
 
 <script type="module">
-import { esc, isAdult, memberColor, initial, hubConfirm, searchMatch, hubToday as today } from "/hub-sdk.js";
+import { esc, isAdult, memberColor, initial, hubConfirm, searchMatch, hubToday as today, glyph, chickadee } from "/hub-sdk.js";
 import {
   CATEGORIES, fmtDate, fmtWhen, memberName as memberNameOf, catOf,
   scheduleList, appointmentList, openTasks, doneTasks, searchableFields, calendarRef,
@@ -461,7 +461,7 @@ function renderSchedule() {
             <div class="meta">${esc(fmtDate(v.date))}${v.time ? ` · ${esc(v.time)}` : ""}${v.note ? ` — ${esc(v.note)}` : ""}</div>
           </div>
           ${canEdit() ? `<button class="btn btn-ghost btn-sm" data-del-visit="${esc(v.id)}">Remove</button>` : ""}
-        </div>`).join("") : `<div class="card empty">No visits scheduled yet.</div>`}
+        </div>`).join("") : `<div class="card empty"><div>${chickadee("nest", { size: 72 })}</div>No visits scheduled yet.</div>`}
     </div>`;
 }
 
@@ -480,12 +480,12 @@ function renderTasks() {
           </span>
         </label>
       </div>
-      ${canEdit() ? `<button class="btn btn-ghost btn-sm" data-del-task="${esc(t.id)}">✕</button>` : ""}
+      ${canEdit() ? `<button class="btn btn-ghost btn-sm" data-del-task="${esc(t.id)}" aria-label="Delete task">${glyph("close")}</button>` : ""}
     </div>`;
   return `
     <div class="section-head"><h2>Care tasks</h2>${canEdit() ? `<button class="btn btn-sm" data-add="task">New task</button>` : ""}</div>
     <div class="stack">
-      ${open.length ? open.map(card).join("") : `<div class="card empty">No open tasks. 🎉</div>`}
+      ${open.length ? open.map(card).join("") : `<div class="card empty"><div>${chickadee("sleeping", { size: 72 })}</div>No open tasks.</div>`}
       ${done.length ? `<div class="section-head" style="margin-top:8px"><h3 class="muted">Done</h3></div>${done.map(card).join("")}` : ""}
     </div>`;
 }
@@ -501,7 +501,7 @@ function renderAppointments() {
             <div>
               <strong>${esc(a.title)}</strong>
               <div class="meta">${esc(fmtDate(a.date))}${a.time ? ` · ${esc(a.time)}` : ""}${a.provider ? ` · ${esc(a.provider)}` : ""}</div>
-              ${a.location ? `<div class="meta">📍 ${esc(a.location)}</div>` : ""}
+              ${a.location ? `<div class="meta">${glyph("location")} ${esc(a.location)}</div>` : ""}
               ${a.notes ? `<div class="meta">${esc(a.notes)}</div>` : ""}
             </div>
             ${canEdit() ? `<button class="btn btn-ghost btn-sm" data-del-appt="${esc(a.id)}">Remove</button>` : ""}
@@ -511,7 +511,7 @@ function renderAppointments() {
               ? `<span class="pill info">${esc(a.accompanied_by_name)} is taking them</span>`
               : `<span class="pill warn">No one assigned</span>${canEdit() ? `<button class="btn btn-ghost btn-sm" data-claim="${esc(a.id)}">I'll take them</button>` : ""}`}
           </div>
-        </div>`).join("") : `<div class="card empty">No appointments yet.</div>`}
+        </div>`).join("") : `<div class="card empty"><div>${chickadee("nest", { size: 72 })}</div>No appointments yet.</div>`}
     </div>`;
 }
 
@@ -523,8 +523,8 @@ function renderObservationList() {
     : observations;
   if (!shown.length) {
     return searchQ
-      ? `<div class="card empty">No observations match "${esc(searchQ)}".</div>`
-      : `<div class="card empty">No observations logged yet.</div>`;
+      ? `<div class="card empty"><div>${chickadee("searching", { size: 72 })}</div>No observations match "${esc(searchQ)}".</div>`
+      : `<div class="card empty"><div>${chickadee("nest", { size: 72 })}</div>No observations logged yet.</div>`;
   }
   return shown.map(o => { const c = catOf(o.category); return `
         <div class="card row-card">
@@ -533,7 +533,7 @@ function renderObservationList() {
             <div style="margin-top:6px">${esc(o.note)}</div>
             <div class="meta">${esc(fmtWhen(o.observed_at))}</div>
           </div>
-          ${canEdit() ? `<button class="btn btn-ghost btn-sm" data-del-obs="${esc(o.id)}">✕</button>` : ""}
+          ${canEdit() ? `<button class="btn btn-ghost btn-sm" data-del-obs="${esc(o.id)}" aria-label="Delete observation">${glyph("close")}</button>` : ""}
         </div>`; }).join("");
 }
 
@@ -560,7 +560,7 @@ function render() {
   const body = tab === "schedule" ? renderSchedule() : tab === "tasks" ? renderTasks() : tab === "appointments" ? renderAppointments() : renderLog();
   root.innerHTML = `
     <div class="topbar">
-      <div><h1>🧓 Elder Care</h1><p class="muted tiny">Coordinate care for someone you love.</p></div>
+      <div><h1>${glyph("hand-heart")} Elder Care</h1><p class="muted tiny">Coordinate care for someone you love.</p></div>
     </div>
     ${error ? `<div class="error">${esc(error)}</div>` : ""}
     <div class="tabs">${TABS.map(t => `<button class="tab ${tab === t.id ? "active" : ""}" data-tab="${t.id}">${t.label}</button>`).join("")}</div>
