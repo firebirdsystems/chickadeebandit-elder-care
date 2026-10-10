@@ -1,0 +1,427 @@
+{
+  "seed": [
+    {
+      "sql": "INSERT INTO app_elder_care__visits (id, date, time, member_id, member_name, note, created_by, created_at) VALUES (?, date('now','-9 days'), ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-14 days'))",
+      "params": [
+        "pv-0",
+        "10:00",
+        "{{me}}",
+        "Adam",
+        "Morning check-in, made breakfast together",
+        "{{me}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__visits (id, date, time, member_id, member_name, note, created_by, created_at) VALUES (?, date('now','-6 days'), ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-14 days'))",
+      "params": [
+        "pv-1",
+        "17:30",
+        "{{me}}",
+        "Adam",
+        "Dinner and evening meds",
+        "{{me}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__visits (id, date, time, member_id, member_name, note, created_by, created_at) VALUES (?, date('now','-3 days'), ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-14 days'))",
+      "params": [
+        "pv-2",
+        "10:00",
+        "{{me}}",
+        "Adam",
+        "Took Mom to the park, short walk",
+        "{{me}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__visits (id, date, time, member_id, member_name, note, created_by, created_at) VALUES (?, date('now','-1 days'), ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-14 days'))",
+      "params": [
+        "pv-3",
+        "18:00",
+        "{{me}}",
+        "Adam",
+        "Dinner, sorted the weekly pill box",
+        "{{me}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__visits (id, date, time, member_id, member_name, note, created_by, created_at) VALUES (?, date('now','+0 days'), ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-14 days'))",
+      "params": [
+        "pv-4",
+        "09:30",
+        "{{me}}",
+        "Adam",
+        "Morning check-in and laundry",
+        "{{me}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__visits (id, date, time, member_id, member_name, note, created_by, created_at) VALUES (?, date('now','+1 days'), ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-14 days'))",
+      "params": [
+        "pv-5",
+        "17:30",
+        "{{me}}",
+        "Adam",
+        "Dinner and evening meds",
+        "{{me}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__visits (id, date, time, member_id, member_name, note, created_by, created_at) VALUES (?, date('now','+3 days'), ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-14 days'))",
+      "params": [
+        "pv-6",
+        "10:00",
+        "{{me}}",
+        "Adam",
+        "Grocery run, restock the fridge",
+        "{{me}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__visits (id, date, time, member_id, member_name, note, created_by, created_at) VALUES (?, date('now','+5 days'), ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-14 days'))",
+      "params": [
+        "pv-7",
+        "14:00",
+        "{{me}}",
+        "Adam",
+        "Afternoon visit, help with bills",
+        "{{me}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__visits (id, date, time, member_id, member_name, note, created_by, created_at) VALUES (?, date('now','+8 days'), ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-14 days'))",
+      "params": [
+        "pv-8",
+        "10:00",
+        "{{me}}",
+        "Adam",
+        "Morning check-in",
+        "{{me}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__visits (id, date, time, member_id, member_name, note, created_by, created_at) VALUES (?, date('now','+12 days'), ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-14 days'))",
+      "params": [
+        "pv-9",
+        "11:00",
+        "{{me}}",
+        "Adam",
+        "Sunday lunch",
+        "{{me}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__tasks (id, title, status, created_by, created_by_name, created_at, detail, due_date, assignee_id, assignee_name) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 days'), ?, date('now','+0 days'), ?, ?)",
+      "params": [
+        "pt-0",
+        "Call Dr. Reyes about the new prescription",
+        "open",
+        "{{me}}",
+        "Adam",
+        "Ask if it can be taken with breakfast.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__tasks (id, title, status, created_by, created_by_name, created_at, detail, due_date, assignee_id, assignee_name) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-3 days'), ?, date('now','+1 days'), ?, ?)",
+      "params": [
+        "pt-1",
+        "Pick up blood pressure refill",
+        "open",
+        "{{me}}",
+        "Adam",
+        "Ready at the pharmacy on Elm Street.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__tasks (id, title, status, created_by, created_by_name, created_at, due_date) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-4 days'), date('now','+4 days'))",
+      "params": [
+        "pt-2",
+        "Schedule the hearing aid cleaning",
+        "open",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__tasks (id, title, status, created_by, created_by_name, created_at, detail, due_date, assignee_id, assignee_name) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-5 days'), ?, date('now','+9 days'), ?, ?)",
+      "params": [
+        "pt-3",
+        "Renew the disabled parking placard",
+        "open",
+        "{{me}}",
+        "Adam",
+        "Form is on the kitchen counter.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__tasks (id, title, status, created_by, created_by_name, created_at, due_date) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-6 days'), date('now','-2 days'))",
+      "params": [
+        "pt-4",
+        "Replace the bathroom night light",
+        "open",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__tasks (id, title, status, created_by, created_by_name, created_at, detail) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-7 days'), ?)",
+      "params": [
+        "pt-5",
+        "Order more compression socks",
+        "open",
+        "{{me}}",
+        "Adam",
+        "Size medium, the beige ones."
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__tasks (id, title, status, created_by, created_by_name, created_at, detail, due_date, assignee_id, assignee_name) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-8 days'), ?, date('now','+6 days'), ?, ?)",
+      "params": [
+        "pt-6",
+        "Confirm ride for the cardiology follow-up",
+        "open",
+        "{{me}}",
+        "Adam",
+        "Senior shuttle needs 48 hours notice.",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__tasks (id, title, assignee_id, assignee_name, due_date, status, created_by, created_by_name, created_at, completed_at) VALUES (?, ?, ?, ?, date('now','-3 days'), ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-7 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-3 days'))",
+      "params": [
+        "ptd-0",
+        "Refill the weekly pill organizer",
+        "{{me}}",
+        "Adam",
+        "done",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__tasks (id, title, assignee_id, assignee_name, due_date, status, created_by, created_by_name, created_at, completed_at) VALUES (?, ?, ?, ?, date('now','-8 days'), ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-12 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-8 days'))",
+      "params": [
+        "ptd-1",
+        "Drop off the insurance paperwork",
+        "{{me}}",
+        "Adam",
+        "done",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__tasks (id, title, assignee_id, assignee_name, due_date, status, created_by, created_by_name, created_at, completed_at) VALUES (?, ?, ?, ?, date('now','-15 days'), ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-19 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-15 days'))",
+      "params": [
+        "ptd-2",
+        "Fix the loose stair railing",
+        "{{me}}",
+        "Adam",
+        "done",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__tasks (id, title, assignee_id, assignee_name, due_date, status, created_by, created_by_name, created_at, completed_at) VALUES (?, ?, ?, ?, date('now','-22 days'), ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-26 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-22 days'))",
+      "params": [
+        "ptd-3",
+        "Book the flu shot",
+        "{{me}}",
+        "Adam",
+        "done",
+        "{{me}}",
+        "Adam"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__appointments (id, title, provider, date, time, location, accompanied_by_id, accompanied_by_name, created_by, created_at, notes) VALUES (?, ?, ?, date('now','+6 days'), ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-20 days'), ?)",
+      "params": [
+        "pa-0",
+        "Cardiology follow-up",
+        "Dr. Reyes",
+        "10:30",
+        "Mercy Heart Clinic, Suite 210",
+        "{{me}}",
+        "Adam",
+        "{{me}}",
+        "Bring the blood pressure log."
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__appointments (id, title, provider, date, time, location, accompanied_by_id, accompanied_by_name, created_by, created_at, notes) VALUES (?, ?, ?, date('now','+2 days'), ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-20 days'), ?)",
+      "params": [
+        "pa-1",
+        "Physical therapy",
+        "Lakeside PT",
+        "14:00",
+        "Lakeside Physical Therapy",
+        "{{me}}",
+        "Adam",
+        "{{me}}",
+        "Wear comfortable shoes."
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__appointments (id, title, provider, date, time, location, accompanied_by_id, accompanied_by_name, created_by, created_at) VALUES (?, ?, ?, date('now','+13 days'), ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-20 days'))",
+      "params": [
+        "pa-2",
+        "Eye exam",
+        "Dr. Okafor",
+        "09:15",
+        "Valley Vision Center",
+        "{{me}}",
+        "Adam",
+        "{{me}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__appointments (id, title, provider, date, time, location, accompanied_by_id, accompanied_by_name, created_by, created_at) VALUES (?, ?, ?, date('now','+20 days'), ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-20 days'))",
+      "params": [
+        "pa-3",
+        "Dentist cleaning",
+        "Dr. Lindqvist",
+        "11:00",
+        "Maple Dental",
+        "{{me}}",
+        "Adam",
+        "{{me}}"
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__appointments (id, title, provider, date, time, location, accompanied_by_id, accompanied_by_name, created_by, created_at, notes) VALUES (?, ?, ?, date('now','-12 days'), ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-20 days'), ?)",
+      "params": [
+        "pa-4",
+        "Annual physical",
+        "Dr. Patel",
+        "08:45",
+        "Northside Family Medicine",
+        "{{me}}",
+        "Adam",
+        "{{me}}",
+        "Labs came back normal. Recheck in six months."
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__appointments (id, title, provider, date, time, location, accompanied_by_id, accompanied_by_name, created_by, created_at, notes) VALUES (?, ?, ?, date('now','-5 days'), ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-20 days'), ?)",
+      "params": [
+        "pa-5",
+        "Podiatry check",
+        "Dr. Nguyen",
+        "15:30",
+        "Foot and Ankle Associates",
+        "{{me}}",
+        "Adam",
+        "{{me}}",
+        "New orthotics ordered."
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__observations (id, member_id, member_name, category, note, observed_at, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','0 days','-3 hours'), strftime('%Y-%m-%dT%H:%M:%fZ','now','0 days','-3 hours'))",
+      "params": [
+        "po-0",
+        "{{me}}",
+        "Adam",
+        "mood",
+        "In good spirits today, enjoyed the walk and chatted with the neighbor."
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__observations (id, member_id, member_name, category, note, observed_at, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 days'))",
+      "params": [
+        "po-1",
+        "{{me}}",
+        "Adam",
+        "health",
+        "Slight swelling in the ankles this evening, keeping an eye on it."
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__observations (id, member_id, member_name, category, note, observed_at, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 days','-5 hours'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 days','-5 hours'))",
+      "params": [
+        "po-2",
+        "{{me}}",
+        "Adam",
+        "meds",
+        "Took the evening pills without a reminder."
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__observations (id, member_id, member_name, category, note, observed_at, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-3 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-3 days'))",
+      "params": [
+        "po-3",
+        "{{me}}",
+        "Adam",
+        "general",
+        "Finished the whole crossword and asked for another book of them."
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__observations (id, member_id, member_name, category, note, observed_at, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-4 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-4 days'))",
+      "params": [
+        "po-4",
+        "{{me}}",
+        "Adam",
+        "health",
+        "Ate a full dinner, appetite is back after last week."
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__observations (id, member_id, member_name, category, note, observed_at, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-6 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-6 days'))",
+      "params": [
+        "po-5",
+        "{{me}}",
+        "Adam",
+        "mood",
+        "A bit tired and quiet, went to bed early."
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__observations (id, member_id, member_name, category, note, observed_at, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-8 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-8 days'))",
+      "params": [
+        "po-6",
+        "{{me}}",
+        "Adam",
+        "meds",
+        "Morning dose was missed, gave it at lunch per the pharmacist."
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__observations (id, member_id, member_name, category, note, observed_at, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-11 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-11 days'))",
+      "params": [
+        "po-7",
+        "{{me}}",
+        "Adam",
+        "general",
+        "Asked twice what day it was, otherwise sharp."
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__observations (id, member_id, member_name, category, note, observed_at, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-14 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-14 days'))",
+      "params": [
+        "po-8",
+        "{{me}}",
+        "Adam",
+        "health",
+        "Blood pressure 128 over 82 before breakfast."
+      ]
+    },
+    {
+      "sql": "INSERT INTO app_elder_care__observations (id, member_id, member_name, category, note, observed_at, created_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-17 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-17 days'))",
+      "params": [
+        "po-9",
+        "{{me}}",
+        "Adam",
+        "mood",
+        "Loved the video call with the grandkids."
+      ]
+    }
+  ]
+}
