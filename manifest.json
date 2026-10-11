@@ -13,7 +13,8 @@
     "visits": {"sql": "SELECT * FROM app_elder_care__visits WHERE date >= date(?, '-30 days') ORDER BY date ASC, time ASC", "params": [":today"]},
     "tasks": {"sql": "SELECT * FROM app_elder_care__tasks WHERE completed_at = '' OR completed_at >= date(?, '-120 days') ORDER BY (status = 'done'), (due_date = ''), due_date ASC, created_at DESC", "params": [":today"]},
     "appointments": {"sql": "SELECT * FROM app_elder_care__appointments WHERE date >= date(?, '-30 days') ORDER BY date ASC, time ASC", "params": [":today"]},
-    "observations": {"sql": "SELECT * FROM app_elder_care__observations WHERE observed_at >= date(?, '-120 days') ORDER BY observed_at DESC", "params": [":today"]}
+    "observations": {"sql": "SELECT * FROM app_elder_care__observations WHERE observed_at >= date(?, '-120 days') ORDER BY observed_at DESC", "params": [":today"]},
+    "profiles": {"sql": "SELECT * FROM app_elder_care__profiles ORDER BY created_at ASC"}
   },
   "db_plaintext_columns": ["category", "status", "date", "time"],
   "contexts": ["household", "shared_space"],
@@ -29,7 +30,8 @@
     "visits": { "kind": "adult_writable" },
     "tasks": { "kind": "adult_writable" },
     "appointments": { "kind": "adult_writable" },
-    "observations": { "kind": "adult_writable" }
+    "observations": { "kind": "adult_writable" },
+    "profiles": { "kind": "adult_writable" }
   },
   "member_references": {
     "visits": [
@@ -65,7 +67,17 @@
     "observations": {
       "column": "member_id",
       "on_removed": "keep"
-    }
+    },
+    "profiles": [
+      {
+        "column": "member_id",
+        "on_removed": "null"
+      },
+      {
+        "column": "created_by",
+        "on_removed": "keep"
+      }
+    ]
   },
   "automation_actions": {
     "add_task": {

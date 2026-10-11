@@ -42,7 +42,7 @@
     .pill.info { background: var(--blue-soft); color: var(--blue); }
     .pill.mood { background: var(--hub-tint-accent, #ede9fe); color: var(--hub-tint-accent-fg, #6d28d9); }
     .tabs { display: flex; gap: 4px; background: var(--border); padding: 3px; border-radius: 10px; margin-bottom: 14px; overflow-x: auto; }
-    .tab { flex: 1; border: 0; border-radius: 8px; background: transparent; color: var(--muted); padding: 8px 10px; font: inherit; font-weight: 700; font-size: .85rem; cursor: pointer; white-space: nowrap; }
+    .tab { flex: 1; border: 0; border-radius: 8px; background: transparent; color: var(--muted); padding: 8px 7px; font: inherit; font-weight: 700; font-size: .85rem; cursor: pointer; white-space: nowrap; }
     .tab.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
     .section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 4px 2px 10px; }
     .section-head h2 { margin-bottom: 0; }
@@ -54,7 +54,7 @@
     .btn-danger { background: var(--red-soft); color: var(--red); border-color: transparent; }
     .btn-sm { min-height: 31px; padding: 5px 9px; font-size: .78rem; }
     .avatar { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: white; font-size: .74rem; font-weight: 800; flex-shrink: 0; }
-    .who { display: inline-flex; align-items: center; gap: 6px; }
+    .who { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
     .meta { color: var(--muted); font-size: .8rem; margin-top: 3px; }
     .form { display: grid; gap: 10px; }
     .field { display: grid; gap: 4px; }
@@ -64,6 +64,8 @@
     textarea { min-height: 68px; resize: vertical; }
     input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
     .empty, .loading { color: var(--muted); text-align: center; padding: 30px 16px; }
+    .load-error { margin: 0 0 12px; padding: 10px 14px; border-radius: 10px; background: var(--hub-tint-danger, #fee2e2); color: var(--hub-tint-danger-fg, #b91c1c); font-size: 0.9rem; display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+    .load-error-retry { background: none; border: 1px solid currentColor; border-radius: 8px; padding: 5px 10px; font: inherit; font-weight: 600; color: inherit; cursor: pointer; flex-shrink: 0; }
     .error { background: var(--red-soft); color: var(--red); padding: 9px 12px; border-radius: 8px; margin-bottom: 10px; font-size: .86rem; }
     .actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .modal-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 50; }
@@ -73,6 +75,14 @@
     .done { opacity: .6; }
     .done .task-title { text-decoration: line-through; }
     @media (max-width: 520px) { .two { grid-template-columns: 1fr; } }
+    .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+    .chip { border: 1.5px solid var(--border-mid); border-radius: 999px; background: var(--surface); color: var(--text); padding: 6px 13px; font: inherit; font-size: .84rem; font-weight: 700; cursor: pointer; min-height: 34px; }
+    .chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+    .profile { display: grid; gap: 12px; }
+    .profile dt { font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 800; }
+    .profile dd { overflow-wrap: anywhere; }
+    .profile dd.long { white-space: pre-wrap; }
+    .hint { color: var(--muted); font-size: .78rem; }
     .search-row { margin-bottom: 12px; }
     .search-input {
       width: 100%; border: 1.5px solid var(--border-mid, var(--border, #d1d5db));
@@ -91,6 +101,9 @@ import { esc, isAdult, memberColor, initial, hubConfirm, searchMatch, hubToday a
 import {
   CATEGORIES, fmtDate, fmtWhen, memberName as memberNameOf, catOf,
   scheduleList, appointmentList, openTasks, doneTasks, searchableFields, calendarRef,
+  PROFILE_FIELDS, activeProfiles, archivedProfiles, viewProfileId, profileInView,
+  forProfile, showsProfileTag, profileName, linkableMembers, untaggedCount,
+  profileEntries, profileChanges,
 } from "./logic.js";
 
 const CONTEXT = window.__CONTEXT_URL ?? "";
@@ -101,21 +114,28 @@ const HUB_MEMBER = window.__CURRENT_MEMBER ?? null;
 
 let members = [], memberMap = new Map(), me = null;
 let visits = [], tasks = [], appointments = [], observations = [];
+// The people being cared for, and which one the lists are narrowed to ("" for
+// everyone). See logic.js for what the selection means with one profile, or none.
+let profiles = [];
+let selectedProfileId = "";
 let tab = "schedule";
 let searchQ = "";       // in-app search (see logic.js searchableFields)
 let error = "";
+let loadFailed = false; // the first load failed: nothing is known, so nothing is shown as empty
 let modalEl = null;
 
 function nowIso() { return new Date().toISOString(); }
 function uid(p) { return `${p}-${crypto.randomUUID()}`; }
 function memberName(id) { return memberNameOf(memberMap, id); }
 function canEdit() { return isAdult(me); }
+function viewId() { return viewProfileId(profiles, selectedProfileId); }
+function inView() { return profileInView(profiles, selectedProfileId); }
 
 async function db(sql, params = []) {
   if (!DB) return { rows: [] };
   const res = await fetch(DB, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sql, params }) });
-  const json = await res.json();
-  if (json.error) throw new Error(json.error);
+  const json = await res.json().catch(() => null);
+  if (!res.ok || !json || typeof json !== "object" || json.error) throw new Error(json?.error || "Couldn’t reach the hub. Try again.");
   return json;
 }
 
@@ -135,20 +155,28 @@ async function loadMembers() {
 }
 
 function seedDemo() {
+  const profile = (id, name, fields) => ({
+    id, name, member_id: null, ...Object.fromEntries(PROFILE_FIELDS.map(f => [f.key, ""])), ...fields,
+    archived_at: "", created_by: "demo-1", created_at: nowIso(), updated_at: nowIso(),
+  });
+  profiles = [
+    profile("p1", "Mom", { born_on: "1944-03-09", residence: "At home on Alder Street", primary_doctor: "Dr. Reyes, 555-0142", diagnoses: "High blood pressure\nArthritis in both knees", mobility: "Uses a cane outdoors. Needs a hand on the stairs.", baseline: "Up by seven, reads the paper, walks to the corner after lunch." }),
+    profile("p2", "Dad", { born_on: "1941-11-22", residence: "At home on Alder Street", cognition: "Forgets recent conversations. Knows everyone." }),
+  ];
   visits = [
-    { id: "v1", date: today(), time: "10:00", member_id: "demo-1", member_name: "Dana", note: "Morning check-in, breakfast", created_by: "demo-1", created_at: nowIso() },
-    { id: "v2", date: today(), time: "18:00", member_id: "demo-2", member_name: "Sam", note: "Dinner and meds", created_by: "demo-2", created_at: nowIso() },
+    { id: "v1", profile_id: "", date: today(), time: "10:00", member_id: "demo-1", member_name: "Dana", note: "Morning check-in, breakfast", created_by: "demo-1", created_at: nowIso() },
+    { id: "v2", profile_id: "p1", date: today(), time: "18:00", member_id: "demo-2", member_name: "Sam", note: "Dinner and meds", created_by: "demo-2", created_at: nowIso() },
   ];
   tasks = [
-    { id: "t1", title: "Call Dr. Reyes about the new prescription", detail: "Ask if it can be taken with breakfast.", assignee_id: "demo-3", assignee_name: "Pat", due_date: today(), status: "open", created_by: "demo-1", created_by_name: "Dana", created_at: nowIso(), completed_at: "" },
-    { id: "t2", title: "Refill blood pressure meds", detail: "", assignee_id: "demo-2", assignee_name: "Sam", due_date: "", status: "done", created_by: "demo-2", created_by_name: "Sam", created_at: nowIso(), completed_at: nowIso() },
+    { id: "t1", profile_id: "p1", title: "Call Dr. Reyes about the new prescription", detail: "Ask if it can be taken with breakfast.", assignee_id: "demo-3", assignee_name: "Pat", due_date: today(), status: "open", created_by: "demo-1", created_by_name: "Dana", created_at: nowIso(), completed_at: "" },
+    { id: "t2", profile_id: "", title: "Refill blood pressure meds", detail: "", assignee_id: "demo-2", assignee_name: "Sam", due_date: "", status: "done", created_by: "demo-2", created_by_name: "Sam", created_at: nowIso(), completed_at: nowIso() },
   ];
   appointments = [
-    { id: "a1", title: "Cardiology follow-up", provider: "Dr. Reyes", date: today(), time: "14:30", location: "Mercy Clinic, Suite 210", accompanied_by_id: "demo-1", accompanied_by_name: "Dana", notes: "Bring the medication list.", created_by: "demo-1", created_at: nowIso() },
+    { id: "a1", profile_id: "p1", title: "Cardiology follow-up", provider: "Dr. Reyes", date: today(), time: "14:30", location: "Mercy Clinic, Suite 210", accompanied_by_id: "demo-1", accompanied_by_name: "Dana", notes: "Bring the medication list.", created_by: "demo-1", created_at: nowIso() },
   ];
   observations = [
-    { id: "o1", member_id: "demo-2", member_name: "Sam", category: "mood", note: "In good spirits today, enjoyed the walk.", observed_at: nowIso(), created_at: nowIso() },
-    { id: "o2", member_id: "demo-1", member_name: "Dana", category: "health", note: "Slight swelling in ankles, keeping an eye on it.", observed_at: nowIso(), created_at: nowIso() },
+    { id: "o1", profile_id: "p2", member_id: "demo-2", member_name: "Sam", category: "mood", note: "In good spirits today, enjoyed the walk.", observed_at: nowIso(), created_at: nowIso() },
+    { id: "o2", profile_id: "p1", member_id: "demo-1", member_name: "Dana", category: "health", note: "Slight swelling in ankles, keeping an eye on it.", observed_at: nowIso(), created_at: nowIso() },
   ];
 }
 
@@ -159,14 +187,16 @@ async function loadData() {
   // no-upcoming fallback still shows something recent; tasks keep every open
   // row (completed_at = '') plus 120 days of completed ones; observations keep
   // a 120-day feed. The date param is the household-local day so the hub's
-  // `:today` preload binding matches this text.
-  const [v, t, a, o] = await Promise.all([
+  // `:today` preload binding matches this text. Profiles are read whole: the
+  // table grows with the people being cared for, not with time.
+  const [v, t, a, o, r] = await Promise.all([
     db("SELECT * FROM app_elder_care__visits WHERE date >= date(?, '-30 days') ORDER BY date ASC, time ASC", [today()]),
     db("SELECT * FROM app_elder_care__tasks WHERE completed_at = '' OR completed_at >= date(?, '-120 days') ORDER BY (status = 'done'), (due_date = ''), due_date ASC, created_at DESC", [today()]),
     db("SELECT * FROM app_elder_care__appointments WHERE date >= date(?, '-30 days') ORDER BY date ASC, time ASC", [today()]),
     db("SELECT * FROM app_elder_care__observations WHERE observed_at >= date(?, '-120 days') ORDER BY observed_at DESC", [today()]),
+    db("SELECT * FROM app_elder_care__profiles ORDER BY created_at ASC"),
   ]);
-  visits = v.rows; tasks = t.rows; appointments = a.rows; observations = o.rows;
+  visits = v.rows; tasks = t.rows; appointments = a.rows; observations = o.rows; profiles = r.rows;
 }
 
 // ── Earlier history ────────────────────────────────────────────────────────
@@ -213,8 +243,8 @@ function earlierHistoryHtml() {
 }
 
 async function init() {
-  try { await Promise.all([loadMembers(), loadData()]); render(); }
-  catch (e) { error = e.message; render(); }
+  try { await Promise.all([loadMembers(), loadData()]); loadFailed = false; render(); }
+  catch { loadFailed = true; render(); }
 }
 
 function postEvent(type, payload) {
@@ -272,6 +302,38 @@ function memberOptions(selectedId) {
   return members.map(m => `<option value="${esc(m.id)}" ${m.id === selectedId ? "selected" : ""}>${esc(m.name)}</option>`).join("");
 }
 
+/**
+ * The "who is this about" field on a new record.
+ *
+ * `required` is for log entries and appointments, which are always about one
+ * person: the field is drawn only when there are two or more to choose from,
+ * and with one profile the record is theirs without asking. A visit or a task
+ * may be for the whole household, so its field appears as soon as there is one
+ * profile, and with only one it starts on Everyone: nobody chose that person by
+ * looking at their list, and a chore stamped with them by default would vanish
+ * from the second person's list the day they are added, with no way to move it
+ * back. With two or more it starts on whoever is in view.
+ */
+function aboutField(id, { required }) {
+  const active = activeProfiles(profiles);
+  if (active.length < (required ? 2 : 1)) return "";
+  const current = !required && active.length === 1 ? "" : (inView()?.id ?? "");
+  const first = required
+    ? `<option value="" disabled ${current ? "" : "selected"}>Choose…</option>`
+    : `<option value="">Everyone</option>`;
+  return `<div class="field"><label for="${id}">${required ? "About" : "For"}</label><select id="${id}" ${required ? "required" : ""}>${first}${active.map(r => `<option value="${esc(r.id)}" ${r.id === current ? "selected" : ""}>${esc(r.name)}</option>`).join("")}</select></div>`;
+}
+function aboutChoice(form, id) {
+  const field = form[id];
+  return field ? field.value : (inView()?.id ?? "");
+}
+// Says who a row is about, where the list mixes people.
+function aboutTag(row, prefix = "") {
+  if (!showsProfileTag(profiles, viewId())) return "";
+  const name = profileName(profiles, row.profile_id);
+  return name ? `<span class="pill" data-testid="about-tag">${esc(prefix + name)}</span>` : "";
+}
+
 /* ── visits ── */
 function visitModal() {
   openModal(`
@@ -282,6 +344,7 @@ function visitModal() {
         <div class="field"><label for="v-time">Time</label><input id="v-time" type="time" value="10:00"></div>
       </div>
       <div class="field"><label for="v-who">Who is visiting</label><select id="v-who">${memberOptions(me?.id)}</select></div>
+      ${aboutField("v-for", { required: false })}
       <div class="field"><label for="v-note">Note</label><input id="v-note" placeholder="What's planned"></div>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" data-close>Cancel</button>
@@ -293,10 +356,10 @@ async function submitVisit(form) {
   const date = form["v-date"].value; if (!date) return;
   const whoId = form["v-who"].value;
   const btn = modalEl.querySelector(".btn[type=submit]"); btn.disabled = true; btn.textContent = "Saving…";
-  const row = { id: uid("v"), date, time: form["v-time"].value, member_id: whoId, member_name: memberName(whoId), note: form["v-note"].value.trim(), created_by: me.id, created_at: nowIso() };
+  const row = { id: uid("v"), profile_id: aboutChoice(form, "v-for"), date, time: form["v-time"].value, member_id: whoId, member_name: memberName(whoId), note: form["v-note"].value.trim(), created_by: me.id, created_at: nowIso() };
   try {
-    if (DB) await db(`INSERT INTO app_elder_care__visits (id, date, time, member_id, member_name, note, created_by, created_at) VALUES (?,?,?,?,?,?,?,?)`,
-      [row.id, row.date, row.time, row.member_id, row.member_name, row.note, row.created_by, row.created_at]);
+    if (DB) await db(`INSERT INTO app_elder_care__visits (id, profile_id, date, time, member_id, member_name, note, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+      [row.id, row.profile_id, row.date, row.time, row.member_id, row.member_name, row.note, row.created_by, row.created_at]);
     visits = [...visits, row].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
     closeModal(); render();
     publish("elder_care.visit_scheduled", {
@@ -316,6 +379,7 @@ function taskModal() {
         <div class="field"><label for="t-who">Assign to</label><select id="t-who"><option value="">Unassigned</option>${memberOptions()}</select></div>
         <div class="field"><label for="t-due">Due</label><input id="t-due" type="date"></div>
       </div>
+      ${aboutField("t-for", { required: false })}
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" data-close>Cancel</button>
         <button type="submit" class="btn">Add task</button>
@@ -326,10 +390,10 @@ async function submitTask(form) {
   const title = form["t-title"].value.trim(); if (!title) { form["t-title"].focus(); return; }
   const whoId = form["t-who"].value;
   const btn = modalEl.querySelector(".btn[type=submit]"); btn.disabled = true; btn.textContent = "Saving…";
-  const row = { id: uid("t"), title, detail: form["t-detail"].value.trim(), assignee_id: whoId, assignee_name: whoId ? memberName(whoId) : "", due_date: form["t-due"].value, status: "open", created_by: me.id, created_by_name: me.name, created_at: nowIso(), completed_at: "" };
+  const row = { id: uid("t"), profile_id: aboutChoice(form, "t-for"), title, detail: form["t-detail"].value.trim(), assignee_id: whoId, assignee_name: whoId ? memberName(whoId) : "", due_date: form["t-due"].value, status: "open", created_by: me.id, created_by_name: me.name, created_at: nowIso(), completed_at: "" };
   try {
-    if (DB) await db(`INSERT INTO app_elder_care__tasks (id, title, detail, assignee_id, assignee_name, due_date, status, created_by, created_by_name, created_at, completed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-      [row.id, row.title, row.detail, row.assignee_id, row.assignee_name, row.due_date, row.status, row.created_by, row.created_by_name, row.created_at, row.completed_at]);
+    if (DB) await db(`INSERT INTO app_elder_care__tasks (id, profile_id, title, detail, assignee_id, assignee_name, due_date, status, created_by, created_by_name, created_at, completed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [row.id, row.profile_id, row.title, row.detail, row.assignee_id, row.assignee_name, row.due_date, row.status, row.created_by, row.created_by_name, row.created_at, row.completed_at]);
     tasks = [row, ...tasks];
     closeModal(); render();
     publish("elder_care.task_created", { title: row.title, assignee_id: row.assignee_id });
@@ -358,6 +422,7 @@ function apptModal() {
     <h2>Add appointment</h2>
     <form class="form" id="appt-form">
       <div class="field"><label for="p-title">Appointment</label><input id="p-title" placeholder="e.g. Cardiology follow-up" data-autofocus required></div>
+      ${aboutField("p-for", { required: true })}
       <div class="two">
         <div class="field"><label for="p-provider">Provider</label><input id="p-provider" placeholder="Doctor / clinic"></div>
         <div class="field"><label for="p-who">Accompanied by</label><select id="p-who"><option value="">Nobody yet</option>${memberOptions()}</select></div>
@@ -377,12 +442,14 @@ function apptModal() {
 async function submitAppt(form) {
   const title = form["p-title"].value.trim(); const date = form["p-date"].value;
   if (!title || !date) { form["p-title"].focus(); return; }
+  const profileId = aboutChoice(form, "p-for");
+  if (form["p-for"] && !profileId) { form["p-for"].focus(); return; }
   const whoId = form["p-who"].value;
   const btn = modalEl.querySelector(".btn[type=submit]"); btn.disabled = true; btn.textContent = "Saving…";
-  const row = { id: uid("a"), title, provider: form["p-provider"].value.trim(), date, time: form["p-time"].value, location: form["p-loc"].value.trim(), accompanied_by_id: whoId, accompanied_by_name: whoId ? memberName(whoId) : "", notes: form["p-notes"].value.trim(), created_by: me.id, created_at: nowIso() };
+  const row = { id: uid("a"), profile_id: profileId, title, provider: form["p-provider"].value.trim(), date, time: form["p-time"].value, location: form["p-loc"].value.trim(), accompanied_by_id: whoId, accompanied_by_name: whoId ? memberName(whoId) : "", notes: form["p-notes"].value.trim(), created_by: me.id, created_at: nowIso() };
   try {
-    if (DB) await db(`INSERT INTO app_elder_care__appointments (id, title, provider, date, time, location, accompanied_by_id, accompanied_by_name, notes, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-      [row.id, row.title, row.provider, row.date, row.time, row.location, row.accompanied_by_id, row.accompanied_by_name, row.notes, row.created_by, row.created_at]);
+    if (DB) await db(`INSERT INTO app_elder_care__appointments (id, profile_id, title, provider, date, time, location, accompanied_by_id, accompanied_by_name, notes, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [row.id, row.profile_id, row.title, row.provider, row.date, row.time, row.location, row.accompanied_by_id, row.accompanied_by_name, row.notes, row.created_by, row.created_at]);
     appointments = [...appointments, row].sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
     closeModal(); render();
     publish("elder_care.appointment_added", {
@@ -418,6 +485,7 @@ function obsModal() {
   openModal(`
     <h2>Log an observation</h2>
     <form class="form" id="obs-form">
+      ${aboutField("o-for", { required: true })}
       <div class="field"><label for="o-cat">Category</label><select id="o-cat">${CATEGORIES.map(c => `<option value="${c.id}">${c.label}</option>`).join("")}</select></div>
       <div class="field"><label for="o-note">What did you notice?</label><textarea id="o-note" placeholder="Share what the care circle should know" data-autofocus required></textarea></div>
       <div class="modal-actions">
@@ -428,11 +496,13 @@ function obsModal() {
 }
 async function submitObs(form) {
   const note = form["o-note"].value.trim(); if (!note) { form["o-note"].focus(); return; }
+  const profileId = aboutChoice(form, "o-for");
+  if (form["o-for"] && !profileId) { form["o-for"].focus(); return; }
   const btn = modalEl.querySelector(".btn[type=submit]"); btn.disabled = true; btn.textContent = "Posting…";
-  const row = { id: uid("o"), member_id: me.id, member_name: me.name, category: form["o-cat"].value, note, observed_at: nowIso(), created_at: nowIso() };
+  const row = { id: uid("o"), profile_id: profileId, member_id: me.id, member_name: me.name, category: form["o-cat"].value, note, observed_at: nowIso(), created_at: nowIso() };
   try {
-    if (DB) await db(`INSERT INTO app_elder_care__observations (id, member_id, member_name, category, note, observed_at, created_at) VALUES (?,?,?,?,?,?,?)`,
-      [row.id, row.member_id, row.member_name, row.category, row.note, row.observed_at, row.created_at]);
+    if (DB) await db(`INSERT INTO app_elder_care__observations (id, profile_id, member_id, member_name, category, note, observed_at, created_at) VALUES (?,?,?,?,?,?,?,?)`,
+      [row.id, row.profile_id, row.member_id, row.member_name, row.category, row.note, row.observed_at, row.created_at]);
     observations = [row, ...observations];
     closeModal(); render();
   } catch (e) { btn.disabled = false; btn.textContent = "Post"; showError(e.message); }
@@ -450,14 +520,14 @@ function showError(msg) { error = msg; render(); }
 function avatar(id, name) { return `<span class="avatar" style="background:${esc(memberColor(id, members))}">${esc(initial(name))}</span>`; }
 
 function renderSchedule() {
-  const list = scheduleList(visits, today());
+  const list = scheduleList(forProfile(visits, viewId()), today());
   return `
     <div class="section-head"><h2>Visit rotation</h2>${canEdit() ? `<button class="btn btn-sm" data-add="visit">Schedule</button>` : ""}</div>
     <div class="stack">
       ${list.length ? list.map(v => `
         <div class="card row-card">
           <div>
-            <div class="who">${avatar(v.member_id, v.member_name)}<strong>${esc(v.member_name)}</strong></div>
+            <div class="who">${avatar(v.member_id, v.member_name)}<strong>${esc(v.member_name)}</strong> ${aboutTag(v, "For ")}</div>
             <div class="meta">${esc(fmtDate(v.date))}${v.time ? ` · ${esc(v.time)}` : ""}${v.note ? ` — ${esc(v.note)}` : ""}</div>
           </div>
           ${canEdit() ? `<button class="btn btn-ghost btn-sm" data-del-visit="${esc(v.id)}">Remove</button>` : ""}
@@ -466,17 +536,18 @@ function renderSchedule() {
 }
 
 function renderTasks() {
-  const open = openTasks(tasks);
-  const done = doneTasks(tasks);
+  const shown = forProfile(tasks, viewId());
+  const open = openTasks(shown);
+  const done = doneTasks(shown);
   const card = t => `
-    <div class="card row-card ${t.status === "done" ? "done" : ""}">
+    <div class="card row-card ${t.status === "done" ? "done" : ""}" data-testid="task" data-task-id="${esc(t.id)}">
       <div style="flex:1">
         <label style="display:flex;gap:9px;align-items:flex-start;text-transform:none;letter-spacing:0;font-weight:400;cursor:pointer">
           <input type="checkbox" style="width:auto;margin-top:3px" ${t.status === "done" ? "checked" : ""} ${canEdit() ? "" : "disabled"} data-toggle="${esc(t.id)}">
           <span>
             <span class="task-title" style="font-weight:700">${esc(t.title)}</span>
             ${t.detail ? `<div class="meta">${esc(t.detail)}</div>` : ""}
-            <div class="meta">${t.assignee_name ? `${esc(t.assignee_name)}` : "Unassigned"}${t.due_date ? ` · due ${esc(fmtDate(t.due_date))}` : ""}</div>
+            <div class="meta">${t.assignee_name ? `${esc(t.assignee_name)}` : "Unassigned"}${t.due_date ? ` · due ${esc(fmtDate(t.due_date))}` : ""} ${aboutTag(t, "For ")}</div>
           </span>
         </label>
       </div>
@@ -491,7 +562,7 @@ function renderTasks() {
 }
 
 function renderAppointments() {
-  const list = appointmentList(appointments, today());
+  const list = appointmentList(forProfile(appointments, viewId()), today());
   return `
     <div class="section-head"><h2>Appointments</h2>${canEdit() ? `<button class="btn btn-sm" data-add="appt">Add</button>` : ""}</div>
     <div class="stack">
@@ -499,7 +570,7 @@ function renderAppointments() {
         <div class="card stack" style="gap:8px">
           <div class="row-card">
             <div>
-              <strong>${esc(a.title)}</strong>
+              <strong>${esc(a.title)}</strong> ${aboutTag(a)}
               <div class="meta">${esc(fmtDate(a.date))}${a.time ? ` · ${esc(a.time)}` : ""}${a.provider ? ` · ${esc(a.provider)}` : ""}</div>
               ${a.location ? `<div class="meta">${glyph("location")} ${esc(a.location)}</div>` : ""}
               ${a.notes ? `<div class="meta">${esc(a.notes)}</div>` : ""}
@@ -518,18 +589,19 @@ function renderAppointments() {
 // Owns the filtering and the empty states, so the keystroke handler can refresh
 // the log without repeating how it is derived.
 function renderObservationList() {
+  const about = forProfile(observations, viewId());
   const shown = searchQ
-    ? observations.filter(o => searchMatch(searchQ, searchableFields(o)))
-    : observations;
+    ? about.filter(o => searchMatch(searchQ, searchableFields(o)))
+    : about;
   if (!shown.length) {
     return searchQ
       ? `<div class="card empty"><div>${chickadee("searching", { size: 72 })}</div>No observations match "${esc(searchQ)}".</div>`
       : `<div class="card empty"><div>${chickadee("nest", { size: 72 })}</div>No observations logged yet.</div>`;
   }
   return shown.map(o => { const c = catOf(o.category); return `
-        <div class="card row-card">
+        <div class="card row-card" data-testid="observation" data-observation-id="${esc(o.id)}">
           <div>
-            <div class="who">${avatar(o.member_id, o.member_name)}<strong>${esc(o.member_name)}</strong> <span class="pill ${c.cls}">${esc(c.label)}</span></div>
+            <div class="who">${avatar(o.member_id, o.member_name)}<strong>${esc(o.member_name)}</strong> <span class="pill ${c.cls}">${esc(c.label)}</span> ${aboutTag(o, "About ")}</div>
             <div style="margin-top:6px">${esc(o.note)}</div>
             <div class="meta">${esc(fmtWhen(o.observed_at))}</div>
           </div>
@@ -540,11 +612,197 @@ function renderObservationList() {
 function renderLog() {
   return `
     <div class="section-head"><h2>Observation log</h2>${canEdit() ? `<button class="btn btn-sm" data-add="obs">Log note</button>` : ""}</div>
-    ${observations.length ? `<div class="search-row"><input id="search" class="search-input" type="search" placeholder="Search observations…" aria-label="Search observations" value="${esc(searchQ)}" /></div>` : ""}
+    ${searchQ || forProfile(observations, viewId()).length ? `<div class="search-row"><input id="search" class="search-input" type="search" placeholder="Search observations…" aria-label="Search observations" value="${esc(searchQ)}" /></div>` : ""}
     <div class="stack" id="observation-list">
       ${renderObservationList()}
     </div>
     ${earlierHistoryHtml()}`;
+}
+
+/* ── profiles ── */
+function profileModal(id) {
+  const r = id ? profiles.find(x => x.id === id) : null;
+  if (id && !r) return;
+  // A link to someone the member list no longer resolves must stay selectable.
+  // Dropping it from the options would make "Not a member" the selected value,
+  // and saving any other field would then quietly unlink the profile.
+  const options = linkableMembers(members, profiles, r?.id ?? "");
+  if (r?.member_id && !options.some(m => m.id === r.member_id)) options.push({ id: r.member_id, name: memberName(r.member_id) });
+  const field = f => `<div class="field"><label for="pr-${f.key}">${f.label}</label>${f.long
+    ? `<textarea id="pr-${f.key}" placeholder="${esc(f.placeholder ?? "")}">${esc(r?.[f.key] ?? "")}</textarea>`
+    : `<input id="pr-${f.key}" type="${f.type ?? "text"}" ${f.type === "date" ? `max="${today()}"` : ""} placeholder="${esc(f.placeholder ?? "")}" value="${esc(r?.[f.key] ?? "")}">`}</div>`;
+  openModal(`
+    <h2>${r ? "Edit profile" : "Add a person"}</h2>
+    <form class="form" id="profile-form" data-profile-id="${esc(r?.id ?? "")}">
+      <div class="error" id="profile-error" hidden></div>
+      <div class="field"><label for="pr-name">Name</label><input id="pr-name" placeholder="What the family calls them" value="${esc(r?.name ?? "")}" data-autofocus required></div>
+      <div class="field">
+        <label for="pr-member">Member</label>
+        <select id="pr-member"><option value="">Not a member</option>${options.map(m => `<option value="${esc(m.id)}" ${m.id === r?.member_id ? "selected" : ""}>${esc(m.name)}</option>`).join("")}</select>
+        <span class="hint">Choose them if they are a member here themselves.</span>
+      </div>
+      ${PROFILE_FIELDS.map(field).join("")}
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+        <button type="submit" class="btn">Save</button>
+      </div>
+    </form>`);
+  profileFormOpened = readProfileForm(modalEl.querySelector("#profile-form"));
+}
+// What the profile form showed when it opened. An edit is whatever differs
+// from THIS, not from the stored row: the browser normalises what a control
+// holds (a date input blanks a value that is not a date, a textarea rewrites
+// line endings), and judged against the row those would read as edits the
+// person never made and be written back over the stored value.
+let profileFormOpened = null;
+function readProfileForm(form) {
+  const values = { name: form["pr-name"].value.trim(), member_id: form["pr-member"].value || null };
+  for (const f of PROFILE_FIELDS) values[f.key] = form[`pr-${f.key}`].value.trim();
+  return values;
+}
+async function submitProfile(form) {
+  const name = form["pr-name"].value.trim(); if (!name) { form["pr-name"].focus(); return; }
+  const id = form.dataset.profileId;
+  const before = id ? profiles.find(x => x.id === id) : null;
+  if (id && !before) { closeModal(); return; }
+  const after = readProfileForm(form);
+  const btn = modalEl.querySelector(".btn[type=submit]"); btn.disabled = true; btn.textContent = "Saving…";
+  const now = nowIso();
+  try {
+    if (before) {
+      // Only what this person changed, so a sibling's save from an older copy
+      // of the profile cannot put back the fields someone else just edited.
+      const changed = profileChanges(profileFormOpened ?? before, after);
+      const cols = Object.keys(changed);
+      if (cols.length) {
+        if (DB) await db(`UPDATE app_elder_care__profiles SET ${cols.map(c => `${c} = ?`).join(", ")}, updated_at = ? WHERE id = ?`,
+          [...cols.map(c => changed[c]), now, id]);
+        Object.assign(before, changed, { updated_at: now });
+      }
+    } else {
+      const row = { id: uid("p"), ...after, archived_at: "", created_by: me.id, created_at: now, updated_at: now };
+      if (DB) await db(`INSERT INTO app_elder_care__profiles (id, name, member_id, ${PROFILE_FIELDS.map(f => f.key).join(", ")}, archived_at, created_by, created_at, updated_at) VALUES (?,?,?,${PROFILE_FIELDS.map(() => "?").join(",")},?,?,?,?)`,
+        [row.id, row.name, row.member_id, ...PROFILE_FIELDS.map(f => row[f.key]), row.archived_at, row.created_by, row.created_at, row.updated_at]);
+      profiles = [...profiles, row];
+      selectedProfileId = row.id;
+    }
+    closeModal(); render();
+  } catch (e) {
+    btn.disabled = false; btn.textContent = "Save";
+    // In the form, not on the page behind it: this form is taller than the
+    // screen on a phone, and the page's own error line would sit out of sight.
+    const box = modalEl.querySelector("#profile-error");
+    box.textContent = /unique/i.test(e.message) ? "That member already has a profile here." : e.message;
+    box.hidden = false; box.scrollIntoView({ block: "nearest" });
+  }
+}
+// Archived, never deleted: every record that names this person keeps a person
+// to name, and the profile comes back with one tap.
+async function setProfileArchived(id, archived) {
+  const r = profiles.find(x => x.id === id); if (!r) return;
+  if (archived && !(await hubConfirm({ message: `Archive ${r.name}'s profile?`, description: "Their visits, tasks, appointments and log entries are kept, and you can restore the profile at any time.", confirmLabel: "Archive" }))) return;
+  const now = nowIso();
+  const archived_at = archived ? now : "";
+  try {
+    if (DB) await db(`UPDATE app_elder_care__profiles SET archived_at = ?, updated_at = ? WHERE id = ?`, [archived_at, now, id]);
+    r.archived_at = archived_at; r.updated_at = now;
+    if (archived && selectedProfileId === id) selectedProfileId = "";
+    render();
+  } catch (e) { showError(e.message); }
+}
+// Log entries and appointments written before anyone had a profile name
+// nobody, and so show under everyone. This settles them in one step.
+async function assignUntagged(id) {
+  const r = profiles.find(x => x.id === id); if (!r) return;
+  if (!(await hubConfirm({ message: `Are they all about ${r.name}?`, description: `Every log entry and appointment that names nobody will be marked as being about ${r.name}.`, confirmLabel: "Yes, mark them" }))) return;
+  // A history load still in flight would replace both lists with rows read
+  // before these updates, and bring the unnamed entries back on screen.
+  if (historyPromise && !historyLoaded) await historyPromise.catch(() => {});
+  try {
+    // Each list is patched as soon as its own statement lands, so a failure on
+    // the second leaves the screen showing exactly what was saved.
+    if (DB) await db(`UPDATE app_elder_care__observations SET profile_id = ? WHERE profile_id = ''`, [id]);
+    for (const o of observations) if (!o.profile_id) o.profile_id = id;
+    if (DB) await db(`UPDATE app_elder_care__appointments SET profile_id = ? WHERE profile_id = ''`, [id]);
+    for (const a of appointments) if (!a.profile_id) a.profile_id = id;
+    render();
+  } catch (e) { showError(e.message); }
+}
+
+function profileCardHtml(r) {
+  const entries = profileEntries(r, today());
+  const linked = r.member_id ? memberMap.get(r.member_id) : null;
+  return `
+    <div class="card stack" data-testid="profile" data-profile-id="${esc(r.id)}">
+      <div class="row-card">
+        <div>
+          <h2 style="margin-bottom:0" data-testid="profile-name">${esc(r.name)}</h2>
+          ${linked ? `<div class="meta">A member here as ${esc(linked.name)}</div>` : ""}
+        </div>
+        ${canEdit() ? `<div class="actions">
+          <button class="btn btn-ghost btn-sm" data-edit-profile="${esc(r.id)}">Edit</button>
+          <button class="btn btn-ghost btn-sm" data-archive-profile="${esc(r.id)}">Archive</button>
+        </div>` : ""}
+      </div>
+      ${entries.length
+        ? `<dl class="profile">${entries.map(e => `<div><dt>${e.label}</dt><dd class="${e.long ? "long" : ""}" data-field="${e.key}">${esc(e.value)}</dd></div>`).join("")}</dl>`
+        : `<p class="muted">Nothing recorded yet.${canEdit() ? " Use Edit to add what the care circle should know." : ""}</p>`}
+      <div class="meta">Updated ${esc(fmtWhen(r.updated_at))}</div>
+    </div>`;
+}
+
+function renderProfile() {
+  const active = activeProfiles(profiles);
+  const archived = archivedProfiles(profiles);
+  const shown = inView();
+  const addBtn = label => canEdit() ? `<button class="btn btn-sm" data-add="profile">${label}</button>` : "";
+  let body;
+  if (shown) {
+    body = profileCardHtml(shown);
+    // Only once there is someone else they could be about. With one profile
+    // an unnamed record already reads as theirs, and there is nothing to settle.
+    if (canEdit() && profiles.length > 1 && untaggedCount(observations, appointments) > 0) {
+      body += `
+        <div class="card stack" style="gap:8px" data-testid="untagged">
+          <div>Some log entries and appointments name nobody, so they show under everyone.</div>
+          <div class="actions"><button class="btn btn-ghost btn-sm" data-assign-untagged="${esc(shown.id)}">They are all about ${esc(shown.name)}</button></div>
+        </div>`;
+    }
+  } else if (active.length) {
+    body = active.map(r => `
+      <div class="card row-card" data-testid="profile-summary" data-profile-id="${esc(r.id)}">
+        <div>
+          <strong>${esc(r.name)}</strong>
+          ${profileEntries(r, today()).filter(e => !e.long).slice(0, 2).map(e => `<div class="meta">${esc(e.value)}</div>`).join("")}
+        </div>
+        <button class="btn btn-ghost btn-sm" data-profile="${esc(r.id)}">Open</button>
+      </div>`).join("");
+  } else {
+    body = `<div class="card empty"><div>${chickadee("nest", { size: 72 })}</div>${archived.length
+      ? "Every profile is archived."
+      : canEdit()
+        ? "Add the person you are caring for. Their profile keeps what everyone helping should know, and each visit, task, appointment and log entry can say who it is about."
+        : "No profile has been added yet."}</div>`;
+  }
+  return `
+    <div class="section-head"><h2>${active.length > 1 && !shown ? "Profiles" : "Profile"}</h2>${addBtn(profiles.length ? "Add another person" : "Add a person")}</div>
+    <div class="stack">
+      ${body}
+      ${archived.length ? `<div class="section-head" style="margin-top:8px"><h3 class="muted">Archived</h3></div>${archived.map(r => `
+        <div class="card row-card done" data-testid="archived-profile" data-profile-id="${esc(r.id)}">
+          <strong>${esc(r.name)}</strong>
+          ${canEdit() ? `<button class="btn btn-ghost btn-sm" data-restore-profile="${esc(r.id)}">Restore</button>` : ""}
+        </div>`).join("")}` : ""}
+    </div>`;
+}
+
+// The switcher. Drawn only when there are two or more people to tell apart.
+function profileChipsHtml() {
+  const active = activeProfiles(profiles);
+  if (active.length < 2) return "";
+  const view = viewId();
+  const chip = (id, label) => `<button class="chip ${view === id ? "active" : ""}" data-testid="profile-chip" data-profile="${esc(id)}" aria-pressed="${view === id}">${esc(label)}</button>`;
+  return `<div class="chips" role="group" aria-label="Whose care to show">${chip("", "Everyone")}${active.map(r => chip(r.id, r.name)).join("")}</div>`;
 }
 
 const TABS = [
@@ -552,20 +810,31 @@ const TABS = [
   { id: "tasks", label: "Tasks" },
   { id: "appointments", label: "Appointments" },
   { id: "log", label: "Log" },
+  { id: "profile", label: "Profile" },
 ];
 
 function render() {
   const root = document.getElementById("root");
   root.className = "app-root";
-  const body = tab === "schedule" ? renderSchedule() : tab === "tasks" ? renderTasks() : tab === "appointments" ? renderAppointments() : renderLog();
+  if (loadFailed) {
+    root.innerHTML = `
+      <div class="topbar">
+        <div><h1>${glyph("hand-heart")} Elder Care</h1><p class="muted tiny">Coordinate care for someone you love.</p></div>
+      </div>
+      <div class="load-error" data-testid="load-error" role="alert"><span>Couldn’t load the care record.</span> <button type="button" class="load-error-retry" data-testid="load-retry">Try again</button></div>`;
+    return;
+  }
+  const body = tab === "schedule" ? renderSchedule() : tab === "tasks" ? renderTasks() : tab === "appointments" ? renderAppointments() : tab === "profile" ? renderProfile() : renderLog();
+  const active = activeProfiles(profiles);
   root.innerHTML = `
     <div class="topbar">
-      <div><h1>${glyph("hand-heart")} Elder Care</h1><p class="muted tiny">Coordinate care for someone you love.</p></div>
+      <div><h1>${glyph("hand-heart")} Elder Care</h1><p class="muted tiny">${active.length === 1 ? `Caring for ${esc(active[0].name)}.` : "Coordinate care for someone you love."}</p></div>
     </div>
     ${error ? `<div class="error">${esc(error)}</div>` : ""}
+    ${profileChipsHtml()}
     <div class="tabs">${TABS.map(t => `<button class="tab ${tab === t.id ? "active" : ""}" data-tab="${t.id}">${t.label}</button>`).join("")}</div>
     ${body}
-    ${tab === "log" ? "" : earlierHistoryHtml()}`;
+    ${tab === "log" || tab === "profile" ? "" : earlierHistoryHtml()}`;
 }
 
 // Re-render only the list on each keystroke so the search box keeps focus.
@@ -583,7 +852,9 @@ document.addEventListener("input", (e) => {
 document.addEventListener("click", e => {
   const t = e.target.closest("button, [data-tab]");
   if (!t) return;
+  if (t.dataset.testid === "load-retry") { init(); return; }
   if (t.dataset.tab) { tab = t.dataset.tab; error = ""; render(); return; }
+  if (t.dataset.profile !== undefined) { selectedProfileId = t.dataset.profile; error = ""; render(); return; }
   if (t.dataset.loadHistory !== undefined) {
     t.disabled = true; t.textContent = "Loading…";
     loadFullHistory().then(render).catch(() => render());
@@ -595,6 +866,11 @@ document.addEventListener("click", e => {
   if (add === "task") return taskModal();
   if (add === "appt") return apptModal();
   if (add === "obs") return obsModal();
+  if (add === "profile") return profileModal("");
+  if (t.dataset.editProfile) return profileModal(t.dataset.editProfile);
+  if (t.dataset.archiveProfile) return setProfileArchived(t.dataset.archiveProfile, true);
+  if (t.dataset.restoreProfile) return setProfileArchived(t.dataset.restoreProfile, false);
+  if (t.dataset.assignUntagged) return assignUntagged(t.dataset.assignUntagged);
   if (t.dataset.toggle) return toggleTask(t.dataset.toggle);
   if (t.dataset.delTask) return deleteTask(t.dataset.delTask);
   if (t.dataset.delVisit) return deleteVisit(t.dataset.delVisit);
@@ -615,6 +891,7 @@ document.addEventListener("submit", e => {
   else if (id === "task-form") submitTask(e.target);
   else if (id === "appt-form") submitAppt(e.target);
   else if (id === "obs-form") submitObs(e.target);
+  else if (id === "profile-form") submitProfile(e.target);
 });
 
 async function deleteVisit(id) {

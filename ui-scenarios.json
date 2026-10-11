@@ -1,0 +1,660 @@
+{
+  "scenarios": [
+    {
+      "name": "an adult adds and edits a profile and it is still there after a reload; with one profile a task can still be for everyone; a child reads the profile and is offered no way to change it",
+      "members": {
+        "parent": "adult",
+        "kid": "child"
+      },
+      "steps": [
+        {
+          "action": "open",
+          "as": "parent"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-tab=\"profile\"]",
+          "as": "parent"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"profile\"]",
+          "as": "parent"
+        },
+        {
+          "action": "expectText",
+          "text": "Add the person you are caring for",
+          "as": "parent"
+        },
+        {
+          "action": "click",
+          "selector": "[data-add=\"profile\"]",
+          "as": "parent"
+        },
+        {
+          "action": "fill",
+          "selector": "#pr-name",
+          "value": "Mom",
+          "as": "parent"
+        },
+        {
+          "action": "fill",
+          "selector": "#pr-born_on",
+          "value": "1944-03-09",
+          "as": "parent"
+        },
+        {
+          "action": "fill",
+          "selector": "#pr-diet",
+          "value": "Low salt",
+          "as": "parent"
+        },
+        {
+          "action": "click",
+          "selector": "#profile-form button[type=\"submit\"]",
+          "as": "parent"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"profile-name\"]",
+          "text": "Mom",
+          "as": "parent"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"profile\"] [data-field=\"diet\"]",
+          "text": "Low salt",
+          "as": "parent"
+        },
+        {
+          "action": "expectText",
+          "text": "Caring for Mom.",
+          "as": "parent"
+        },
+        {
+          "action": "reload",
+          "as": "parent"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-tab=\"profile\"]",
+          "as": "parent"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"profile\"]",
+          "as": "parent"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"profile\"] [data-field=\"diet\"]",
+          "text": "Low salt",
+          "as": "parent"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"profile\"] [data-field=\"born_on\"]",
+          "text": "1944",
+          "as": "parent"
+        },
+        {
+          "action": "click",
+          "selector": "[data-edit-profile]",
+          "as": "parent"
+        },
+        {
+          "action": "fill",
+          "selector": "#pr-diet",
+          "value": "Soft food only",
+          "as": "parent"
+        },
+        {
+          "action": "click",
+          "selector": "#profile-form button[type=\"submit\"]",
+          "as": "parent"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"profile\"] [data-field=\"diet\"]",
+          "text": "Soft food only",
+          "as": "parent"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"tasks\"]",
+          "as": "parent"
+        },
+        {
+          "action": "click",
+          "selector": "[data-add=\"task\"]",
+          "as": "parent"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "#t-for",
+          "as": "parent"
+        },
+        {
+          "action": "expectCount",
+          "selector": "#t-for option[value=\"\"]:checked",
+          "count": 1,
+          "as": "parent"
+        },
+        {
+          "action": "fill",
+          "selector": "#t-title",
+          "value": "Fix the porch light",
+          "as": "parent"
+        },
+        {
+          "action": "click",
+          "selector": "#task-form button[type=\"submit\"]",
+          "as": "parent"
+        },
+        {
+          "action": "expectText",
+          "text": "Fix the porch light",
+          "as": "parent"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"log\"]",
+          "as": "parent"
+        },
+        {
+          "action": "click",
+          "selector": "[data-add=\"obs\"]",
+          "as": "parent"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "#o-note",
+          "as": "parent"
+        },
+        {
+          "action": "expectCount",
+          "selector": "#o-for",
+          "count": 0,
+          "as": "parent"
+        },
+        {
+          "action": "click",
+          "selector": "#obs-form [data-close]",
+          "as": "parent"
+        },
+        {
+          "action": "open",
+          "as": "kid"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-tab=\"profile\"]",
+          "as": "kid"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"profile\"]",
+          "as": "kid"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"profile-name\"]",
+          "text": "Mom",
+          "as": "kid"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"profile\"] [data-field=\"diet\"]",
+          "text": "Soft food only",
+          "as": "kid"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"profile\"] [data-field=\"born_on\"]",
+          "text": "1944",
+          "as": "kid"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-edit-profile]",
+          "count": 0,
+          "as": "kid"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-archive-profile]",
+          "count": 0,
+          "as": "kid"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-add=\"profile\"]",
+          "count": 0,
+          "as": "kid"
+        }
+      ]
+    },
+    {
+      "name": "with two people the lists switch between them, a new record goes to whoever is in view, unnamed entries can be settled on one person, and archiving one keeps their records",
+      "members": {
+        "parent": "adult"
+      },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_elder_care__profiles (id, name, created_by, created_at, updated_at) VALUES ('p-mom', ?, ?, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+          "params": [
+            "Mom",
+            "{{parent}}"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_elder_care__profiles (id, name, created_by, created_at, updated_at) VALUES ('p-dad', ?, ?, '2026-01-02T00:00:00Z', '2026-01-02T00:00:00Z')",
+          "params": [
+            "Dad",
+            "{{parent}}"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_elder_care__tasks (id, profile_id, title, status, created_by, created_by_name, created_at) VALUES ('t-mom', 'p-mom', ?, 'open', ?, ?, '2026-01-03T00:00:00Z')",
+          "params": [
+            "Refill the pill box",
+            "{{parent}}",
+            "Parent"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_elder_care__tasks (id, profile_id, title, status, created_by, created_by_name, created_at) VALUES ('t-dad', 'p-dad', ?, 'open', ?, ?, '2026-01-03T00:00:00Z')",
+          "params": [
+            "Book the eye test",
+            "{{parent}}",
+            "Parent"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_elder_care__tasks (id, title, status, created_by, created_by_name, created_at) VALUES ('t-house', ?, 'open', ?, ?, '2026-01-03T00:00:00Z')",
+          "params": [
+            "Fix the porch light",
+            "{{parent}}",
+            "Parent"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_elder_care__observations (id, member_id, member_name, category, note, observed_at, created_at) VALUES ('o-old', ?, ?, 'mood', ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-2 days'))",
+          "params": [
+            "{{parent}}",
+            "Parent",
+            "Cheerful after lunch"
+          ]
+        },
+        {
+          "action": "open"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-tab=\"tasks\"]"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"tasks\"]"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"profile-chip\"]",
+          "count": 3
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"task\"]",
+          "count": 3
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"task\"] [data-testid=\"about-tag\"]",
+          "count": 2
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"task\"][data-task-id=\"t-dad\"]",
+          "text": "For Dad"
+        },
+        {
+          "action": "click",
+          "selector": "[data-testid=\"profile-chip\"][data-profile=\"p-mom\"]"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"task\"][data-task-id=\"t-mom\"]"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"task\"][data-task-id=\"t-house\"]"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"task\"][data-task-id=\"t-dad\"]",
+          "count": 0
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"about-tag\"]",
+          "count": 0
+        },
+        {
+          "action": "click",
+          "selector": "[data-add=\"task\"]"
+        },
+        {
+          "action": "fill",
+          "selector": "#t-title",
+          "value": "Call the chiropodist"
+        },
+        {
+          "action": "click",
+          "selector": "#task-form button[type=\"submit\"]"
+        },
+        {
+          "action": "expectText",
+          "text": "Call the chiropodist"
+        },
+        {
+          "action": "click",
+          "selector": "[data-testid=\"profile-chip\"][data-profile=\"p-dad\"]"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"task\"][data-task-id=\"t-dad\"]"
+        },
+        {
+          "action": "expectNoText",
+          "text": "Call the chiropodist"
+        },
+        {
+          "action": "click",
+          "selector": "[data-add=\"task\"]"
+        },
+        {
+          "action": "fill",
+          "selector": "#t-title",
+          "value": "Order the stairlift survey"
+        },
+        {
+          "action": "select",
+          "selector": "#t-for",
+          "value": ""
+        },
+        {
+          "action": "click",
+          "selector": "#task-form button[type=\"submit\"]"
+        },
+        {
+          "action": "expectText",
+          "text": "Order the stairlift survey"
+        },
+        {
+          "action": "click",
+          "selector": "[data-testid=\"profile-chip\"][data-profile=\"p-mom\"]"
+        },
+        {
+          "action": "expectText",
+          "text": "Order the stairlift survey"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"schedule\"]"
+        },
+        {
+          "action": "click",
+          "selector": "[data-add=\"visit\"]"
+        },
+        {
+          "action": "fill",
+          "selector": "#v-note",
+          "value": "Sunday lunch"
+        },
+        {
+          "action": "select",
+          "selector": "#v-for",
+          "value": "p-dad"
+        },
+        {
+          "action": "click",
+          "selector": "#visit-form button[type=\"submit\"]"
+        },
+        {
+          "action": "click",
+          "selector": "[data-testid=\"profile-chip\"][data-profile=\"p-dad\"]"
+        },
+        {
+          "action": "expectText",
+          "text": "Sunday lunch"
+        },
+        {
+          "action": "click",
+          "selector": "[data-testid=\"profile-chip\"][data-profile=\"p-mom\"]"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-add=\"visit\"]"
+        },
+        {
+          "action": "expectNoText",
+          "text": "Sunday lunch"
+        },
+        {
+          "action": "reload"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-tab=\"tasks\"]"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"tasks\"]"
+        },
+        {
+          "action": "click",
+          "selector": "[data-testid=\"profile-chip\"][data-profile=\"p-dad\"]"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"task\"][data-task-id=\"t-dad\"]"
+        },
+        {
+          "action": "expectNoText",
+          "text": "Call the chiropodist"
+        },
+        {
+          "action": "expectText",
+          "text": "Order the stairlift survey"
+        },
+        {
+          "action": "click",
+          "selector": "[data-testid=\"profile-chip\"][data-profile=\"p-mom\"]"
+        },
+        {
+          "action": "expectText",
+          "text": "Call the chiropodist"
+        },
+        {
+          "action": "click",
+          "selector": "[data-testid=\"profile-chip\"][data-profile=\"\"]"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"log\"]"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"observation\"][data-observation-id=\"o-old\"]"
+        },
+        {
+          "action": "click",
+          "selector": "[data-add=\"obs\"]"
+        },
+        {
+          "action": "fill",
+          "selector": "#o-note",
+          "value": "Slept badly"
+        },
+        {
+          "action": "click",
+          "selector": "#obs-form button[type=\"submit\"]"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "#obs-form"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"observation\"]",
+          "count": 1
+        },
+        {
+          "action": "select",
+          "selector": "#o-for",
+          "value": "p-dad"
+        },
+        {
+          "action": "click",
+          "selector": "#obs-form button[type=\"submit\"]"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"observation\"]",
+          "count": 2
+        },
+        {
+          "action": "expectText",
+          "text": "About Dad"
+        },
+        {
+          "action": "click",
+          "selector": "[data-testid=\"profile-chip\"][data-profile=\"p-mom\"]"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"observation\"][data-observation-id=\"o-old\"]"
+        },
+        {
+          "action": "expectNoText",
+          "text": "Slept badly"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"profile\"]"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"untagged\"]"
+        },
+        {
+          "action": "click",
+          "selector": "[data-assign-untagged=\"p-mom\"]"
+        },
+        {
+          "action": "dialog",
+          "answer": "accept",
+          "text": "Mom"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"untagged\"]",
+          "count": 0
+        },
+        {
+          "action": "reload"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-tab=\"log\"]"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"log\"]"
+        },
+        {
+          "action": "click",
+          "selector": "[data-testid=\"profile-chip\"][data-profile=\"p-dad\"]"
+        },
+        {
+          "action": "expectText",
+          "text": "Slept badly"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"observation\"][data-observation-id=\"o-old\"]",
+          "count": 0
+        },
+        {
+          "action": "click",
+          "selector": "[data-testid=\"profile-chip\"][data-profile=\"p-mom\"]"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"observation\"][data-observation-id=\"o-old\"]"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"profile\"]"
+        },
+        {
+          "action": "click",
+          "selector": "[data-archive-profile=\"p-mom\"]"
+        },
+        {
+          "action": "dialog",
+          "answer": "accept",
+          "text": "Archive"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"archived-profile\"][data-profile-id=\"p-mom\"]"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"profile-chip\"]",
+          "count": 0
+        },
+        {
+          "action": "expectText",
+          "text": "Caring for Dad."
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"tasks\"]"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"task\"][data-task-id=\"t-mom\"]",
+          "text": "For Mom"
+        },
+        {
+          "action": "reload"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-tab=\"profile\"]"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"profile\"]"
+        },
+        {
+          "action": "click",
+          "selector": "[data-restore-profile=\"p-mom\"]"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"profile-chip\"]",
+          "count": 3
+        }
+      ]
+    }
+  ]
+}

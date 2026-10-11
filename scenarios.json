@@ -146,6 +146,185 @@
           "expect": { "status": 201 }
         }
       ]
+    },
+    {
+      "name": "any adult keeps the profile of the person being cared for, every member reads it, and a child cannot change it",
+      "members": { "parent": "adult", "sibling": "adult", "kid": "child" },
+      "steps": [
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "INSERT INTO app_elder_care__profiles (id, name, member_id, diet, archived_at, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, '', ?, ?, ?)",
+          "params": ["p-mom", "Mom", null, "Low salt", "{{parent}}", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "INSERT INTO app_elder_care__profiles (id, name, member_id, diet, archived_at, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, '', ?, ?, ?)",
+          "params": ["p-kid", "Grandma", null, "Sweets", "{{kid}}", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "UPDATE app_elder_care__profiles SET diet = ? WHERE id = ?",
+          "params": ["Sweets", "p-mom"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "UPDATE app_elder_care__profiles SET archived_at = ? WHERE id = ?",
+          "params": ["2026-01-01T00:00:00Z", "p-mom"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "UPDATE app_elder_care__profiles SET diet = ?, updated_at = ? WHERE id = ?",
+          "params": ["Low salt, soft food", "2026-01-02T00:00:00Z", "p-mom"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "SELECT id, name, diet, archived_at FROM app_elder_care__profiles",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "p-mom", "name": "Mom", "diet": "Low salt, soft food", "archived_at": "" }] }
+        }
+      ]
+    },
+    {
+      "name": "a member can be linked to one profile only, and an unlinked profile never blocks another",
+      "members": { "parent": "adult", "mom": "adult" },
+      "steps": [
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "INSERT INTO app_elder_care__profiles (id, name, member_id, diet, archived_at, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, '', ?, ?, ?)",
+          "params": ["p-mom", "Mom", "{{mom}}", "", "{{parent}}", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "INSERT INTO app_elder_care__profiles (id, name, member_id, diet, archived_at, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, '', ?, ?, ?)",
+          "params": ["p-dad", "Dad", null, "", "{{parent}}", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "INSERT INTO app_elder_care__profiles (id, name, member_id, diet, archived_at, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, '', ?, ?, ?)",
+          "params": ["p-aunt", "Aunt Jo", null, "", "{{parent}}", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "INSERT INTO app_elder_care__profiles (id, name, member_id, diet, archived_at, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, '', ?, ?, ?)",
+          "params": ["p-mom-again", "Mother", "{{mom}}", "", "{{parent}}", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 400, "errorIncludes": "UNIQUE" }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "UPDATE app_elder_care__profiles SET member_id = ? WHERE id = ?",
+          "params": ["{{mom}}", "p-dad"],
+          "expect": { "status": 400, "errorIncludes": "UNIQUE" }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "SELECT id, member_id FROM app_elder_care__profiles",
+          "expect": { "status": 200, "rowCount": 3, "rowsContain": [{ "id": "p-dad", "member_id": null }, { "id": "p-aunt", "member_id": null }] }
+        }
+      ]
+    },
+    {
+      "name": "a record names who it is about, one written without a name stays unnamed, and the unnamed log entries can be settled on one person in a single step",
+      "members": { "parent": "adult", "kid": "child" },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_elder_care__observations (id, member_id, member_name, category, note, observed_at, created_at) VALUES ('o-old', ?, 'Parent', 'mood', 'Before profiles existed', '2026-01-02T13:00:00Z', '2026-01-02T13:00:00Z')",
+          "params": ["{{parent}}"]
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "INSERT INTO app_elder_care__observations (id, profile_id, member_id, member_name, category, note, observed_at, created_at) VALUES (?, ?, ?, ?, 'health', ?, ?, ?)",
+          "params": ["o-dad", "p-dad", "{{parent}}", "Parent", "Slept badly", "2026-01-03T13:00:00Z", "2026-01-03T13:00:00Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "INSERT INTO app_elder_care__tasks (id, title, status, created_by, created_by_name, created_at) VALUES (?, ?, 'open', ?, ?, ?)",
+          "params": ["t-house", "Fix the porch light", "{{parent}}", "Parent", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "SELECT id, profile_id FROM app_elder_care__tasks",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "t-house", "profile_id": "" }] }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "UPDATE app_elder_care__observations SET profile_id = ? WHERE profile_id = ''",
+          "params": ["p-mom"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "UPDATE app_elder_care__observations SET profile_id = ? WHERE profile_id = ''",
+          "params": ["p-mom"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "SELECT id, profile_id FROM app_elder_care__observations ORDER BY id",
+          "expect": { "status": 200, "rowCount": 2, "rowsContain": [{ "id": "o-dad", "profile_id": "p-dad" }, { "id": "o-old", "profile_id": "p-mom" }] }
+        }
+      ]
+    },
+    {
+      "name": "in a shared care space every sibling, not only the one who set it up, can add and edit a profile",
+      "context": "shared_space",
+      "members": { "steward": "admin", "sibling": "adult" },
+      "steps": [
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "INSERT INTO app_elder_care__profiles (id, name, member_id, diet, archived_at, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, '', ?, ?, ?)",
+          "params": ["p-mom", "Mom", null, "Low salt", "{{sibling}}", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "steward",
+          "sql": "UPDATE app_elder_care__profiles SET diet = ?, updated_at = ? WHERE id = ?",
+          "params": ["Low salt, soft food", "2026-01-02T00:00:00Z", "p-mom"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "UPDATE app_elder_care__profiles SET archived_at = ?, updated_at = ? WHERE id = ?",
+          "params": ["2026-01-03T00:00:00Z", "2026-01-03T00:00:00Z", "p-mom"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "steward",
+          "sql": "SELECT id, diet, archived_at FROM app_elder_care__profiles",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "p-mom", "diet": "Low salt, soft food", "archived_at": "2026-01-03T00:00:00Z" }] }
+        }
+      ]
     }
   ]
 }

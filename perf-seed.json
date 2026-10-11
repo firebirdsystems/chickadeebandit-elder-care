@@ -1,6 +1,19 @@
 {
   "seed": [
     {
+      "sql": "INSERT INTO app_elder_care__profiles (id, name, residence, primary_doctor, diagnoses, mobility, baseline, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-30 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-30 days'))",
+      "params": [
+        "pr-0",
+        "Mom",
+        "At home on Alder Street",
+        "Dr. Reyes, 555-0142",
+        "High blood pressure. Arthritis in both knees.",
+        "Uses a cane outdoors. Needs a hand on the stairs.",
+        "Up by seven, reads the paper, walks to the corner after lunch.",
+        "{{me}}"
+      ]
+    },
+    {
       "sql": "INSERT INTO app_elder_care__visits (id, date, time, member_id, member_name, note, created_by, created_at) VALUES (?, date('now','-9 days'), ?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-14 days'))",
       "params": [
         "pv-0",
