@@ -954,6 +954,7 @@ function recordCardHtml() {
         <div class="field"><label for="rec-to">To</label><input id="rec-to" type="date" value="${esc(recordTo)}"></div>
       </div>
       <span class="hint">Leave From empty to start at the beginning. Each row shows the day it is listed under, and its time in UTC.</span>
+      <span class="hint">Medications are not in this record. They are kept in the Medications app, where whoever manages them can print the list.</span>
       ${records.full ? `<div class="actions">${button(records.full.id, "html", "Open the record", true)}</div>` : ""}
       ${records.views.length ? `<div>${records.views.map(v => `
         <div class="reading-row" data-testid="record-view" data-record="${esc(v.id)}">

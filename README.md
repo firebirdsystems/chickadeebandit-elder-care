@@ -53,6 +53,11 @@ filtered by date. Each report can also be opened on its own or downloaded as CSV
   it fell on beside its UTC time, and the reports filter on that day, so a reading taken on the
   evening of the 31st is in a record "to the 31st" wherever the household is. Each row prints that
   day beside its time in UTC. An entry written before the column existed is filed by its UTC date.
+- Medications are not in the record. A report reads only its own app's tables, and medications are
+  kept under the Medications app's own access rules, so that app prints its own list of current
+  medications and of doses taken. Whoever manages medications there can open it: any adult in a
+  household, the steward in a shared space. The card says where to look without promising a tab
+  the reader may not have.
 - The hub allows ten documents per person every five minutes and at most 10,000 rows per report.
   Past either limit it answers with a short message in the new tab.
 
