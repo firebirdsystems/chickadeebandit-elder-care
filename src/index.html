@@ -171,7 +171,7 @@ async function db(sql, params = []) {
 // write shows that wording, or the one fixed line for the action: never the
 // hub's own error text, which goes to the console.
 function userError(msg) { return Object.assign(new Error(msg), { forUser: true }); }
-function failText(e, line) { console.error(e); return e?.forUser ? e.message : line; }
+function failText(e, line) { if (!e?.forUser) console.error(e); return e?.forUser ? e.message : line; }
 
 async function loadMembers() {
   if (!CONTEXT) {
