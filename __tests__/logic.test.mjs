@@ -877,7 +877,8 @@ describe("createResettableLoad", () => {
 
 describe("defaultRecordRange", () => {
   it("covers the 90 days up to the household's today", () => {
-    expect(defaultRecordRange("2026-10-11")).toEqual({ from: "2026-07-13", to: "2026-10-11" });
+    // Both ends are in the record, so 90 days ending 11 October start on 14 July.
+    expect(defaultRecordRange("2026-10-11")).toEqual({ from: "2026-07-14", to: "2026-10-11" });
   });
 
   it("ends on the day it is given, not on this machine's clock", () => {
@@ -888,8 +889,8 @@ describe("defaultRecordRange", () => {
   });
 
   it("crosses a year boundary and a leap day", () => {
-    expect(defaultRecordRange("2027-01-15").from).toBe("2026-10-17");
-    expect(defaultRecordRange("2028-03-31").from).toBe("2028-01-01");
+    expect(defaultRecordRange("2027-01-15").from).toBe("2026-10-18");
+    expect(defaultRecordRange("2028-03-31").from).toBe("2028-01-02");
   });
 
   it("is empty when it is not given a day", () => {

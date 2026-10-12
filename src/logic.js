@@ -550,8 +550,9 @@ export function createResettableLoad() {
 // dates and opens them.
 
 /**
- * The dates the record covers until someone picks their own: the 90 days up to
- * `todayStr`, which the page passes as the HOUSEHOLD's today.
+ * The dates the record covers until someone picks their own: the 90 calendar
+ * days ending on `todayStr`, which the page passes as the HOUSEHOLD's today. The
+ * hub includes both ends, so the range starts 89 days back.
  *
  * Every date the record is compared with is the household's calendar day: an
  * appointment's date, and the day stored on each reading and log entry. A range
@@ -561,7 +562,7 @@ export function createResettableLoad() {
  */
 export function defaultRecordRange(todayStr) {
   if (!isCalendarDate(todayStr)) return { from: "", to: "" };
-  const start = new Date(Date.UTC(Number(todayStr.slice(0, 4)), Number(todayStr.slice(5, 7)) - 1, Number(todayStr.slice(8, 10)) - 90));
+  const start = new Date(Date.UTC(Number(todayStr.slice(0, 4)), Number(todayStr.slice(5, 7)) - 1, Number(todayStr.slice(8, 10)) - 89));
   return { from: start.toISOString().slice(0, 10), to: todayStr };
 }
 
