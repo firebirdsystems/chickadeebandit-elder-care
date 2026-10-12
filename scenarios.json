@@ -35,7 +35,7 @@
         {
           "action": "db",
           "as": "kid",
-          "sql": "UPDATE app_elder_care__tasks SET status = 'done' WHERE id = ?",
+          "sql": "UPDATE app_elder_care__tasks SET title = 'Buy candy', due_date = '2026-01-09' WHERE id = ?",
           "params": ["t1"],
           "expect": { "status": 403 }
         },
@@ -341,7 +341,7 @@
       ]
     },
     {
-      "name": "only an adult can record a reading against a profile; a child cannot add, change or remove one, even for the profile linked to them",
+      "name": "a reading against a profile is stamped with whoever recorded it whatever they claim; a person who is not an adult can correct only the ones they recorded, cannot hand one to somebody else, and cannot remove any; every member reads them",
       "members": { "sibling": "adult", "mom": "child", "kid": "child" },
       "steps": [
         {
@@ -363,20 +363,69 @@
           "as": "kid",
           "sql": "INSERT INTO app_elder_care__vitals (id, profile_id, kind, value, value2, unit, note, measured_at, recorded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
           "params": ["x-kid", "p-mom", "bp", "300", "20", "mmHg", "", "2026-01-03T08:00:00.000Z", "{{sibling}}", "2026-01-01T00:00:00Z"],
-          "expect": { "status": 403 }
+          "expect": { "status": 200 }
         },
         {
           "action": "db",
-          "as": "mom",
-          "sql": "INSERT INTO app_elder_care__vitals (id, profile_id, kind, value, value2, unit, note, measured_at, recorded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          "params": ["x-mom", "p-mom", "pulse", "72", "", "bpm", "", "2026-01-03T08:00:00.000Z", "{{mom}}", "2026-01-01T00:00:00Z"],
-          "expect": { "status": 403 }
+          "as": "sibling",
+          "sql": "SELECT id FROM app_elder_care__vitals WHERE recorded_by = ? ORDER BY id",
+          "params": ["{{kid}}"],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "x-kid" }] }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "SELECT id FROM app_elder_care__vitals WHERE recorded_by = ? ORDER BY id",
+          "params": ["{{sibling}}"],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "x-bp" }] }
         },
         {
           "action": "db",
           "as": "kid",
           "sql": "UPDATE app_elder_care__vitals SET value = ? WHERE id = ?",
           "params": ["90", "x-bp"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "SELECT id, value FROM app_elder_care__vitals WHERE id = ?",
+          "params": ["x-bp"],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "x-bp", "value": "128" }] }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "UPDATE app_elder_care__vitals SET value = ?, value2 = ? WHERE id = ?",
+          "params": ["130", "80", "x-kid"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "SELECT id, value, value2 FROM app_elder_care__vitals WHERE id = ?",
+          "params": ["x-kid"],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "x-kid", "value": "130", "value2": "80" }] }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "UPDATE app_elder_care__vitals SET recorded_by = ? WHERE id = ?",
+          "params": ["{{sibling}}", "x-kid"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "UPDATE app_elder_care__vitals SET visibility = ? WHERE id = ?",
+          "params": ["private", "x-kid"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "DELETE FROM app_elder_care__vitals WHERE id = ?",
+          "params": ["x-kid"],
           "expect": { "status": 403 }
         },
         {
@@ -385,6 +434,20 @@
           "sql": "DELETE FROM app_elder_care__vitals WHERE id = ?",
           "params": ["x-bp"],
           "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "UPDATE app_elder_care__vitals SET note = ? WHERE id = ?",
+          "params": ["Entered by mistake", "x-kid"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "DELETE FROM app_elder_care__vitals WHERE id = ?",
+          "params": ["x-kid"],
+          "expect": { "status": 200 }
         },
         {
           "action": "db",
@@ -571,6 +634,572 @@
           "as": "steward",
           "sql": "SELECT id, value FROM app_elder_care__own_vitals",
           "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "o-sibling", "value": "66" }] }
+        }
+      ]
+    },
+    {
+      "name": "a guest the family employs logs a shift: the hub stamps it with them whatever they claim, they can add to it and end it, nobody who is not an adult can change it for them, and only an adult can remove it",
+      "members": { "sibling": "adult", "aide": "guest", "kid": "child" },
+      "granted": ["aide"],
+      "steps": [
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "INSERT INTO app_elder_care__shifts (id, member_id, member_name, profile_id, started_at, ended_at, shift_date, summary, handoff, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+          "params": ["s1", "{{sibling}}", "Ana", "", "2026-01-05T09:00:00.000Z", "", "2026-01-05", "", "", "2026-01-05T09:00:00.000Z", "2026-01-05T09:00:00.000Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "SELECT id, visibility FROM app_elder_care__shifts WHERE member_id = ?",
+          "params": ["{{aide}}"],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "s1", "visibility": "everyone" }] }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "SELECT id FROM app_elder_care__shifts WHERE member_id = ?",
+          "params": ["{{sibling}}"],
+          "expect": { "status": 200, "rowCount": 0 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "SELECT * FROM app_elder_care__shifts WHERE ended_at = '' OR started_at >= date(?, '-30 days') ORDER BY started_at DESC, id DESC",
+          "params": ["2026-03-01"],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "s1", "ended_at": "" }] }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "UPDATE app_elder_care__shifts SET summary = ?, handoff = ?, ended_at = ?, updated_at = ? WHERE id = ?",
+          "params": ["Breakfast and a walk", "Ate little at lunch", "2026-01-05T13:00:00.000Z", "2026-01-05T13:00:00.000Z", "s1"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "SELECT id, summary, handoff, ended_at FROM app_elder_care__shifts",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "s1", "summary": "Breakfast and a walk", "handoff": "Ate little at lunch", "ended_at": "2026-01-05T13:00:00.000Z" }] }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "SELECT * FROM app_elder_care__shifts WHERE ended_at = '' OR started_at >= date(?, '-30 days') ORDER BY started_at DESC, id DESC",
+          "params": ["2026-03-01"],
+          "expect": { "status": 200, "rowCount": 0 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "SELECT * FROM app_elder_care__shifts WHERE id > ? ORDER BY id LIMIT 500",
+          "params": [""],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "s1" }] }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "UPDATE app_elder_care__shifts SET handoff = ? WHERE id = ?",
+          "params": ["All fine", "s1"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "SELECT id, handoff FROM app_elder_care__shifts WHERE id = ?",
+          "params": ["s1"],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "s1", "handoff": "Ate little at lunch" }] }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "UPDATE app_elder_care__shifts SET member_id = ? WHERE id = ?",
+          "params": ["{{sibling}}", "s1"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "UPDATE app_elder_care__shifts SET visibility = ? WHERE id = ?",
+          "params": ["private", "s1"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "DELETE FROM app_elder_care__shifts WHERE id = ?",
+          "params": ["s1"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "UPDATE app_elder_care__shifts SET ended_at = ?, updated_at = ? WHERE id = ?",
+          "params": ["2026-01-05T13:30:00.000Z", "2026-01-06T08:00:00.000Z", "s1"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "SELECT id, ended_at FROM app_elder_care__shifts WHERE id = ?",
+          "params": ["s1"],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "s1", "ended_at": "2026-01-05T13:30:00.000Z" }] }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "UPDATE app_elder_care__shifts SET handoff = ?, updated_at = ? WHERE id = ? AND updated_at = ?",
+          "params": ["Written from an old copy", "2026-01-07T09:00:00.000Z", "s1", "2026-01-05T13:00:00.000Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "SELECT id, handoff, updated_at FROM app_elder_care__shifts WHERE id = ?",
+          "params": ["s1"],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "s1", "handoff": "Ate little at lunch", "updated_at": "2026-01-06T08:00:00.000Z" }] }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "UPDATE app_elder_care__shifts SET handoff = ?, updated_at = ? WHERE id = ? AND updated_at = ?",
+          "params": ["Ate little at lunch. Tablets taken.", "2026-01-06T09:00:00.000Z", "s1", "2026-01-06T08:00:00.000Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "SELECT id, handoff FROM app_elder_care__shifts WHERE id = ?",
+          "params": ["s1"],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "s1", "handoff": "Ate little at lunch. Tablets taken." }] }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "UPDATE app_elder_care__shifts SET summary = ?, handoff = ?, ended_at = ?, updated_at = ? WHERE id = ? AND ended_at = ''",
+          "params": ["", "", "2026-01-05T18:00:00.000Z", "2026-01-05T18:00:00.000Z", "s1"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "SELECT id, ended_at, handoff FROM app_elder_care__shifts WHERE id = ?",
+          "params": ["s1"],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "s1", "ended_at": "2026-01-05T13:30:00.000Z", "handoff": "Ate little at lunch. Tablets taken." }] }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "DELETE FROM app_elder_care__shifts WHERE id = ?",
+          "params": ["s1"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "SELECT id FROM app_elder_care__shifts",
+          "expect": { "status": 200, "rowCount": 0 }
+        }
+      ]
+    },
+    {
+      "name": "a guest can tick a task off and reopen it, and can change nothing else about it, add one or remove one",
+      "members": { "sibling": "adult", "aide": "guest" },
+      "granted": ["aide"],
+      "steps": [
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "INSERT INTO app_elder_care__tasks (id, title, detail, status, created_by, created_by_name, created_at) VALUES (?, ?, ?, 'open', ?, ?, ?)",
+          "params": ["t1", "Change the bed linen", "", "{{sibling}}", "Sibling", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "UPDATE app_elder_care__tasks SET status = ?, completed_at = ?, completed_by = ?, completed_by_name = ? WHERE id = ?",
+          "params": ["done", "2026-01-05T10:00:00.000Z", "{{aide}}", "Ana", "t1"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "SELECT id, status, completed_at, completed_by_name FROM app_elder_care__tasks WHERE completed_by = ?",
+          "params": ["{{aide}}"],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "t1", "status": "done", "completed_at": "2026-01-05T10:00:00.000Z", "completed_by_name": "Ana" }] }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "UPDATE app_elder_care__tasks SET status = ?, completed_at = ?, completed_by = ?, completed_by_name = ? WHERE id = ?",
+          "params": ["open", "", "", "", "t1"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "SELECT id, status, completed_at, completed_by, title FROM app_elder_care__tasks",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "t1", "status": "open", "completed_at": "", "completed_by": "", "title": "Change the bed linen" }] }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "UPDATE app_elder_care__tasks SET title = ? WHERE id = ?",
+          "params": ["Done already", "t1"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "UPDATE app_elder_care__tasks SET detail = ? WHERE id = ?",
+          "params": ["Skip it", "t1"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "UPDATE app_elder_care__tasks SET assignee_id = ?, assignee_name = ? WHERE id = ?",
+          "params": ["{{sibling}}", "Sibling", "t1"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "UPDATE app_elder_care__tasks SET due_date = ? WHERE id = ?",
+          "params": ["2027-01-01", "t1"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "UPDATE app_elder_care__tasks SET profile_id = ? WHERE id = ?",
+          "params": ["p-other", "t1"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "UPDATE app_elder_care__tasks SET created_by = ?, created_by_name = ? WHERE id = ?",
+          "params": ["{{aide}}", "Ana", "t1"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "UPDATE app_elder_care__tasks SET visibility = ? WHERE id = ?",
+          "params": ["private", "t1"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "INSERT INTO app_elder_care__tasks (id, title, status, created_by, created_by_name, created_at) VALUES (?, ?, 'open', ?, ?, ?)",
+          "params": ["t2", "Pay me more", "{{aide}}", "Ana", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "DELETE FROM app_elder_care__tasks WHERE id = ?",
+          "params": ["t1"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "SELECT id FROM app_elder_care__tasks",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "t1" }] }
+        }
+      ]
+    },
+    {
+      "name": "a log entry marked family only is read by the adults and by nobody else, not a guest and not a child; any adult can change who reads an entry and nobody else can; a guest cannot write, change or remove an entry",
+      "members": { "sibling": "adult", "parent": "adult", "aide": "guest", "kid": "child" },
+      "granted": ["aide"],
+      "steps": [
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "INSERT INTO app_elder_care__observations (id, profile_id, member_id, member_name, category, note, observed_at, observed_date, visibility, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+          "params": ["o-open", "", "{{sibling}}", "Sibling", "health", "Slept well", "2026-01-05T08:00:00.000Z", "2026-01-05", "everyone", "2026-01-05T08:00:00.000Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "INSERT INTO app_elder_care__observations (id, profile_id, member_id, member_name, category, note, observed_at, observed_date, visibility, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+          "params": ["o-fam", "", "{{sibling}}", "Sibling", "general", "She says the afternoon tablets are being skipped", "2026-01-05T09:00:00.000Z", "2026-01-05", "family", "2026-01-05T09:00:00.000Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "INSERT INTO app_elder_care__observations (id, member_id, member_name, category, note, observed_at, created_at) VALUES (?, ?, ?, 'mood', ?, ?, ?)",
+          "params": ["o-old", "{{sibling}}", "Sibling", "Cheerful", "2026-01-04T08:00:00.000Z", "2026-01-04T08:00:00.000Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "SELECT id, visibility FROM app_elder_care__observations ORDER BY id",
+          "expect": { "status": 200, "rowCount": 3, "rowsContain": [{ "id": "o-fam", "visibility": "family" }, { "id": "o-open", "visibility": "everyone" }, { "id": "o-old", "visibility": "everyone" }] }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "SELECT * FROM app_elder_care__observations WHERE observed_at >= date(?, '-120 days') ORDER BY observed_at DESC",
+          "params": ["2026-01-10"],
+          "expect": { "status": 200, "rowCount": 2, "rowsContain": [{ "id": "o-open" }, { "id": "o-old" }] }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "SELECT * FROM app_elder_care__observations WHERE id > ? ORDER BY id LIMIT 500",
+          "params": [""],
+          "expect": { "status": 200, "rowCount": 2, "rowsContain": [{ "id": "o-open" }, { "id": "o-old" }] }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "SELECT id FROM app_elder_care__observations WHERE id = ?",
+          "params": ["o-fam"],
+          "expect": { "status": 200, "rowCount": 0 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "SELECT id FROM app_elder_care__observations ORDER BY id",
+          "expect": { "status": 200, "rowCount": 2, "rowsContain": [{ "id": "o-open" }, { "id": "o-old" }] }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "UPDATE app_elder_care__observations SET visibility = ? WHERE id = ?",
+          "params": ["everyone", "o-fam"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "UPDATE app_elder_care__observations SET note = ? WHERE id = ?",
+          "params": ["Nothing to report", "o-open"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "INSERT INTO app_elder_care__observations (id, profile_id, member_id, member_name, category, note, observed_at, observed_date, visibility, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+          "params": ["o-aide", "", "{{aide}}", "Ana", "general", "All fine", "2026-01-05T10:00:00.000Z", "2026-01-05", "everyone", "2026-01-05T10:00:00.000Z"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "DELETE FROM app_elder_care__observations WHERE id = ?",
+          "params": ["o-open"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "UPDATE app_elder_care__observations SET visibility = ? WHERE id = ?",
+          "params": ["family", "o-open"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "SELECT id FROM app_elder_care__observations ORDER BY id",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "o-old" }] }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "UPDATE app_elder_care__observations SET visibility = ? WHERE id = ?",
+          "params": ["everyone", "o-fam"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "SELECT id, note FROM app_elder_care__observations WHERE id = ?",
+          "params": ["o-fam"],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "o-fam", "note": "She says the afternoon tablets are being skipped" }] }
+        },
+        {
+          "action": "db",
+          "as": "parent",
+          "sql": "DELETE FROM app_elder_care__observations WHERE id = ?",
+          "params": ["o-open"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "SELECT id FROM app_elder_care__observations ORDER BY id",
+          "expect": { "status": 200, "rowCount": 2, "rowsContain": [{ "id": "o-fam" }, { "id": "o-old" }] }
+        }
+      ]
+    },
+    {
+      "name": "a guest records a reading for the person they care for: it is stamped with them, they can correct it, they cannot touch a reading the family recorded, and an adult can remove theirs",
+      "members": { "sibling": "adult", "aide": "guest" },
+      "granted": ["aide"],
+      "steps": [
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "INSERT INTO app_elder_care__profiles (id, name, archived_at, created_by, created_at, updated_at) VALUES (?, ?, '', ?, ?, ?)",
+          "params": ["p-mom", "Mom", "{{sibling}}", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "INSERT INTO app_elder_care__vitals (id, profile_id, kind, value, value2, unit, note, measured_at, recorded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "params": ["x-sib", "p-mom", "pulse", "70", "", "bpm", "", "2026-01-02T08:00:00.000Z", "{{sibling}}", "2026-01-02T08:00:00.000Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "INSERT INTO app_elder_care__vitals (id, profile_id, kind, value, value2, unit, note, measured_at, recorded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "params": ["x-aide", "p-mom", "bp", "128", "82", "mmHg", "Left arm", "2026-01-03T08:00:00.000Z", "{{sibling}}", "2026-01-03T08:00:00.000Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "SELECT id FROM app_elder_care__vitals WHERE recorded_by = ?",
+          "params": ["{{aide}}"],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "x-aide" }] }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "UPDATE app_elder_care__vitals SET value = ?, value2 = ?, unit = ?, note = ?, measured_at = ?, measured_date = ?, recorded_by_name = ? WHERE id = ?",
+          "params": ["126", "82", "mmHg", "Right arm", "2026-01-03T08:05:00.000Z", "2026-01-03", "Ana", "x-aide"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "UPDATE app_elder_care__vitals SET value = ?, recorded_by_name = ? WHERE id = ?",
+          "params": ["200", "Ana", "x-sib"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "SELECT id, value, note, recorded_by_name FROM app_elder_care__vitals ORDER BY id",
+          "expect": { "status": 200, "rowCount": 2, "rowsContain": [{ "id": "x-aide", "value": "126", "note": "Right arm", "recorded_by_name": "Ana" }, { "id": "x-sib", "value": "70", "recorded_by_name": "" }] }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "DELETE FROM app_elder_care__vitals WHERE id = ?",
+          "params": ["x-aide"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "DELETE FROM app_elder_care__vitals WHERE id = ?",
+          "params": ["x-aide"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "aide",
+          "sql": "SELECT id FROM app_elder_care__vitals",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "x-sib" }] }
+        }
+      ]
+    },
+    {
+      "name": "in a shared care space any sibling, not only the one who set it up, can correct or remove a shift another sibling logged, tick a task, and read and reopen a family-only log entry",
+      "context": "shared_space",
+      "members": { "steward": "admin", "sibling": "adult" },
+      "steps": [
+        {
+          "action": "db",
+          "as": "steward",
+          "sql": "INSERT INTO app_elder_care__shifts (id, member_id, member_name, profile_id, started_at, ended_at, shift_date, summary, handoff, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+          "params": ["s1", "{{steward}}", "Steward", "", "2026-01-05T09:00:00.000Z", "2026-01-05T12:00:00.000Z", "2026-01-05", "Lunch", "", "2026-01-05T09:00:00.000Z", "2026-01-05T12:00:00.000Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "UPDATE app_elder_care__shifts SET handoff = ?, updated_at = ? WHERE id = ?",
+          "params": ["Left the keys with the neighbour", "2026-01-05T12:30:00.000Z", "s1"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "steward",
+          "sql": "SELECT id, handoff FROM app_elder_care__shifts",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "s1", "handoff": "Left the keys with the neighbour" }] }
+        },
+        {
+          "action": "db",
+          "as": "steward",
+          "sql": "INSERT INTO app_elder_care__tasks (id, title, status, created_by, created_by_name, created_at) VALUES (?, ?, 'open', ?, ?, ?)",
+          "params": ["t1", "Collect prescription", "{{steward}}", "Steward", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "UPDATE app_elder_care__tasks SET status = ?, completed_at = ?, completed_by = ? WHERE id = ?",
+          "params": ["done", "2026-01-05T10:00:00.000Z", "{{sibling}}", "t1"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "steward",
+          "sql": "SELECT id, status FROM app_elder_care__tasks",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "t1", "status": "done" }] }
+        },
+        {
+          "action": "db",
+          "as": "steward",
+          "sql": "INSERT INTO app_elder_care__observations (id, profile_id, member_id, member_name, category, note, observed_at, observed_date, visibility, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+          "params": ["o-fam", "", "{{steward}}", "Steward", "general", "Private to the family", "2026-01-05T09:00:00.000Z", "2026-01-05", "family", "2026-01-05T09:00:00.000Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "SELECT id, note FROM app_elder_care__observations",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "o-fam", "note": "Private to the family" }] }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "UPDATE app_elder_care__observations SET visibility = ? WHERE id = ?",
+          "params": ["everyone", "o-fam"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "steward",
+          "sql": "SELECT id, visibility FROM app_elder_care__observations",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "o-fam", "visibility": "everyone" }] }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "DELETE FROM app_elder_care__shifts WHERE id = ?",
+          "params": ["s1"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "steward",
+          "sql": "SELECT id FROM app_elder_care__shifts",
+          "expect": { "status": 200, "rowCount": 0 }
         }
       ]
     }

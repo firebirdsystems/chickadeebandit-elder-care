@@ -1349,6 +1349,865 @@
           "as": "sibling"
         }
       ]
+    },
+    {
+      "name": "a guest the family employs lands on the shift log, starts a shift, saves notes that survive a reload, ends it with a handoff, ticks a task, logs a reading and corrects it, and is offered nothing else; a family-only note stays out of their sight until an adult shows it to everyone; an adult corrects the handoff and the guest sees the correction",
+      "members": {
+        "sibling": "adult",
+        "aide": "guest"
+      },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_elder_care__profiles (id, name, member_id, created_by, created_at, updated_at) VALUES ('p-mom', ?, NULL, ?, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+          "params": [
+            "Mom",
+            "{{sibling}}"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_elder_care__tasks (id, title, status, created_by, created_by_name, created_at) VALUES ('t1', ?, 'open', ?, ?, '2026-01-01T00:00:00Z')",
+          "params": [
+            "Change the bed linen",
+            "{{sibling}}",
+            "Sibling"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_elder_care__observations (id, profile_id, member_id, member_name, category, note, observed_at, created_at) VALUES ('o-open', 'p-mom', ?, ?, 'health', ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 days'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 days'))",
+          "params": [
+            "{{sibling}}",
+            "Sibling",
+            "Slept well"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_elder_care__observations (id, profile_id, member_id, member_name, category, note, observed_at, visibility, created_at) VALUES ('o-fam', 'p-mom', ?, ?, 'general', ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 days'), 'family', strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 days'))",
+          "params": [
+            "{{sibling}}",
+            "Sibling",
+            "She says the afternoon tablets are being skipped"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_elder_care__vitals (id, profile_id, kind, value, unit, measured_at, recorded_by, created_at) VALUES ('x-sib', 'p-mom', 'pulse', ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 days'), ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 days'))",
+          "params": [
+            "70",
+            "bpm",
+            "{{sibling}}"
+          ]
+        },
+        {
+          "action": "open",
+          "as": "aide"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-start-shift]",
+          "as": "aide"
+        },
+        {
+          "action": "expectText",
+          "text": "No shifts logged yet",
+          "as": "aide"
+        },
+        {
+          "action": "click",
+          "selector": "[data-start-shift]",
+          "as": "aide"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"running-shift\"]",
+          "as": "aide"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-start-shift]",
+          "count": 0,
+          "as": "aide"
+        },
+        {
+          "action": "fill",
+          "selector": "#sh-summary",
+          "value": "Breakfast and a short walk",
+          "as": "aide"
+        },
+        {
+          "action": "fill",
+          "selector": "#sh-handoff",
+          "value": "Ate little at lunch",
+          "as": "aide"
+        },
+        {
+          "action": "click",
+          "selector": "[data-save-shift]",
+          "as": "aide"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"shift-saved\"]",
+          "as": "aide"
+        },
+        {
+          "action": "reload",
+          "as": "aide"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"running-shift\"]",
+          "as": "aide"
+        },
+        {
+          "action": "expectText",
+          "selector": "#sh-handoff",
+          "text": "Ate little at lunch",
+          "as": "aide"
+        },
+        {
+          "action": "click",
+          "selector": "[data-end-shift]",
+          "as": "aide"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"running-shift\"]",
+          "count": 0,
+          "as": "aide"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"latest-handoff\"]",
+          "text": "Ate little at lunch",
+          "as": "aide"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"shift\"] [data-testid=\"shift-summary\"]",
+          "text": "Breakfast and a short walk",
+          "as": "aide"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"shift\"] [data-edit-shift]",
+          "count": 1,
+          "as": "aide"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-del-shift]",
+          "count": 0,
+          "as": "aide"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-start-shift]",
+          "as": "aide"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"tasks\"]",
+          "as": "aide"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-task-id=\"t1\"]",
+          "as": "aide"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-add=\"task\"]",
+          "count": 0,
+          "as": "aide"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-del-task]",
+          "count": 0,
+          "as": "aide"
+        },
+        {
+          "action": "click",
+          "selector": "[data-task-id=\"t1\"] [data-toggle]",
+          "as": "aide"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-task-id=\"t1\"] [data-testid=\"task-done-by\"]",
+          "as": "aide"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"log\"]",
+          "as": "aide"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"observation\"]",
+          "count": 1,
+          "as": "aide"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"observation\"]",
+          "text": "Slept well",
+          "as": "aide"
+        },
+        {
+          "action": "expectNoText",
+          "text": "tablets are being skipped",
+          "as": "aide"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-add=\"obs\"]",
+          "count": 0,
+          "as": "aide"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-obs-audience]",
+          "count": 0,
+          "as": "aide"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"vitals\"]",
+          "as": "aide"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"vital\"][data-kind=\"pulse\"] [data-testid=\"vital-latest\"]",
+          "text": "70",
+          "as": "aide"
+        },
+        {
+          "action": "click",
+          "selector": "[data-add=\"vital\"]",
+          "as": "aide"
+        },
+        {
+          "action": "select",
+          "selector": "#vt-kind",
+          "value": "bp",
+          "as": "aide"
+        },
+        {
+          "action": "fill",
+          "selector": "#vt-value",
+          "value": "128",
+          "as": "aide"
+        },
+        {
+          "action": "fill",
+          "selector": "#vt-value2",
+          "value": "82",
+          "as": "aide"
+        },
+        {
+          "action": "click",
+          "selector": "#vital-form button[type=\"submit\"]",
+          "as": "aide"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"vital\"][data-kind=\"bp\"] [data-testid=\"vital-latest\"]",
+          "text": "128/82",
+          "as": "aide"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"vital\"][data-kind=\"bp\"] [data-testid=\"reading\"]",
+          "count": 1,
+          "as": "aide"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-del-vital]",
+          "count": 0,
+          "as": "aide"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-edit-vital]",
+          "count": 1,
+          "as": "aide"
+        },
+        {
+          "action": "click",
+          "selector": "[data-edit-vital]",
+          "as": "aide"
+        },
+        {
+          "action": "fill",
+          "selector": "#vt-value",
+          "value": "126",
+          "as": "aide"
+        },
+        {
+          "action": "click",
+          "selector": "#vital-form button[type=\"submit\"]",
+          "as": "aide"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"vital\"][data-kind=\"bp\"] [data-testid=\"vital-latest\"]",
+          "text": "126/82",
+          "as": "aide"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"vital\"][data-kind=\"bp\"] [data-testid=\"reading\"]",
+          "count": 1,
+          "as": "aide"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"profile\"]",
+          "as": "aide"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"profile-name\"]",
+          "text": "Mom",
+          "as": "aide"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-edit-profile]",
+          "count": 0,
+          "as": "aide"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"record-card\"]",
+          "count": 0,
+          "as": "aide"
+        },
+        {
+          "action": "open",
+          "as": "sibling"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-tab=\"shifts\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"shifts\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"latest-handoff\"]",
+          "text": "Ate little at lunch",
+          "as": "sibling"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"shift\"]",
+          "count": 1,
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-testid=\"shift\"] [data-edit-shift]",
+          "as": "sibling"
+        },
+        {
+          "action": "fill",
+          "selector": "#sh-edit-handoff",
+          "value": "Ate little at lunch. Called the pharmacy.",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "#shift-form button[type=\"submit\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"shift\"] [data-testid=\"shift-handoff\"]",
+          "text": "Called the pharmacy",
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"shift\"] [data-testid=\"shift-summary\"]",
+          "text": "Breakfast and a short walk",
+          "as": "sibling"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-del-shift]",
+          "count": 1,
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"tasks\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-task-id=\"t1\"] [data-testid=\"task-done-by\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"log\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"observation\"]",
+          "count": 2,
+          "as": "sibling"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"family-only\"]",
+          "count": 1,
+          "as": "sibling"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-observation-id=\"o-fam\"] [data-testid=\"family-only\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-observation-id=\"o-fam\"] [data-obs-audience]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"family-only\"]",
+          "count": 0,
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"vitals\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-vital-kind=\"bp\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"vital\"][data-kind=\"bp\"] [data-del-vital]",
+          "count": 1,
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"vital\"][data-kind=\"bp\"] [data-testid=\"vital-latest\"]",
+          "text": "126/82",
+          "as": "sibling"
+        },
+        {
+          "action": "reload",
+          "as": "aide"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"latest-handoff\"]",
+          "text": "Called the pharmacy",
+          "as": "aide"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"log\"]",
+          "as": "aide"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"observation\"]",
+          "count": 2,
+          "as": "aide"
+        },
+        {
+          "action": "expectText",
+          "text": "tablets are being skipped",
+          "as": "aide"
+        }
+      ]
+    },
+    {
+      "name": "two people write the same shift from pages that do not refresh: an adult's handoff typed into a box that looked empty does not replace the one the caregiver has saved since, both end up in the note, and the caregiver ending the shift afterwards keeps the adult's text",
+      "members": {
+        "sibling": "adult",
+        "aide": "guest"
+      },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_elder_care__shifts (id, member_id, member_name, started_at, created_at, updated_at) VALUES ('s1', ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 hours'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 hours'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 hours'))",
+          "params": [
+            "{{aide}}",
+            "Ana"
+          ]
+        },
+        {
+          "action": "open",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"shifts\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-shift-id=\"s1\"] [data-edit-shift]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-shift-id=\"s1\"] [data-testid=\"shift-handoff\"]",
+          "count": 0,
+          "as": "sibling"
+        },
+        {
+          "action": "open",
+          "as": "aide"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"running-shift\"]",
+          "as": "aide"
+        },
+        {
+          "action": "fill",
+          "selector": "#sh-handoff",
+          "value": "Ate little at lunch",
+          "as": "aide"
+        },
+        {
+          "action": "click",
+          "selector": "[data-save-shift]",
+          "as": "aide"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"shift-saved\"]",
+          "as": "aide"
+        },
+        {
+          "action": "click",
+          "selector": "[data-shift-id=\"s1\"] [data-edit-shift]",
+          "as": "sibling"
+        },
+        {
+          "action": "fill",
+          "selector": "#sh-edit-handoff",
+          "value": "Called the pharmacy",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "#shift-form button[type=\"submit\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "selector": "#shift-error",
+          "text": "Someone else changed this shift",
+          "as": "sibling"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-shift-id=\"s1\"] [data-testid=\"shift-handoff\"]",
+          "count": 1,
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "#shift-form button[type=\"submit\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-shift-id=\"s1\"] [data-testid=\"shift-handoff\"]",
+          "text": "Ate little at lunch",
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-shift-id=\"s1\"] [data-testid=\"shift-handoff\"]",
+          "text": "Called the pharmacy",
+          "as": "sibling"
+        },
+        {
+          "action": "fill",
+          "selector": "#sh-summary",
+          "value": "Lunch and a walk",
+          "as": "aide"
+        },
+        {
+          "action": "click",
+          "selector": "[data-end-shift]",
+          "as": "aide"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"running-shift\"]",
+          "count": 0,
+          "as": "aide"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"latest-handoff\"]",
+          "text": "Ate little at lunch",
+          "as": "aide"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"latest-handoff\"]",
+          "text": "Called the pharmacy",
+          "as": "aide"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-shift-id=\"s1\"] [data-testid=\"shift-summary\"]",
+          "text": "Lunch and a walk",
+          "as": "aide"
+        },
+        {
+          "action": "reload",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"shifts\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-shift-id=\"s1\"] [data-testid=\"shift-handoff\"]",
+          "text": "Called the pharmacy",
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-shift-id=\"s1\"] [data-testid=\"shift-summary\"]",
+          "text": "Lunch and a walk",
+          "as": "sibling"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-shift-id=\"s1\"] .pill.good",
+          "count": 0,
+          "as": "sibling"
+        }
+      ]
+    },
+    {
+      "name": "a caregiver's save that cannot read the shift again, or whose write lands on nothing, writes nothing and keeps what they typed: the family's newer handoff is still there, the caregiver is shown it above their own, and both are saved once the hub answers",
+      "members": {
+        "sibling": "adult",
+        "aide": "guest"
+      },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_elder_care__shifts (id, member_id, member_name, started_at, created_at, updated_at) VALUES ('s1', ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 hours'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 hours'), strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 hours'))",
+          "params": [
+            "{{aide}}",
+            "Ana"
+          ]
+        },
+        {
+          "action": "open",
+          "as": "aide"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"running-shift\"]",
+          "as": "aide"
+        },
+        {
+          "action": "open",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"shifts\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-shift-id=\"s1\"] [data-edit-shift]",
+          "as": "sibling"
+        },
+        {
+          "action": "fill",
+          "selector": "#sh-edit-handoff",
+          "value": "Family note",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "#shift-form button[type=\"submit\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-shift-id=\"s1\"] [data-testid=\"shift-handoff\"]",
+          "text": "Family note",
+          "as": "sibling"
+        },
+        {
+          "action": "fault",
+          "mode": "down",
+          "as": "aide"
+        },
+        {
+          "action": "fill",
+          "selector": "#sh-handoff",
+          "value": "Aide note",
+          "as": "aide"
+        },
+        {
+          "action": "click",
+          "selector": "[data-save-shift]",
+          "as": "aide"
+        },
+        {
+          "action": "expectText",
+          "selector": ".error",
+          "text": "save the shift",
+          "as": "aide"
+        },
+        {
+          "action": "expectText",
+          "selector": "#sh-handoff",
+          "text": "Aide note",
+          "as": "aide"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"shift-saved\"]",
+          "count": 0,
+          "as": "aide"
+        },
+        {
+          "action": "fault",
+          "mode": "noop",
+          "as": "aide"
+        },
+        {
+          "action": "click",
+          "selector": "[data-save-shift]",
+          "as": "aide"
+        },
+        {
+          "action": "expectText",
+          "selector": ".error",
+          "text": "Their text is now above yours",
+          "as": "aide"
+        },
+        {
+          "action": "expectText",
+          "selector": "#sh-handoff",
+          "text": "Family note",
+          "as": "aide"
+        },
+        {
+          "action": "expectText",
+          "selector": "#sh-handoff",
+          "text": "Aide note",
+          "as": "aide"
+        },
+        {
+          "action": "click",
+          "selector": "[data-save-shift]",
+          "as": "aide"
+        },
+        {
+          "action": "expectText",
+          "selector": ".error",
+          "text": "kept changing",
+          "as": "aide"
+        },
+        {
+          "action": "expectText",
+          "selector": "#sh-handoff",
+          "text": "Aide note",
+          "as": "aide"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"shift-saved\"]",
+          "count": 0,
+          "as": "aide"
+        },
+        {
+          "action": "reload",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"shifts\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-shift-id=\"s1\"] [data-testid=\"shift-handoff\"]",
+          "text": "Family note",
+          "as": "sibling"
+        },
+        {
+          "action": "expectNoText",
+          "selector": "[data-shift-id=\"s1\"] [data-testid=\"shift-handoff\"]",
+          "text": "Aide note",
+          "as": "sibling"
+        },
+        {
+          "action": "fault",
+          "mode": "none",
+          "as": "aide"
+        },
+        {
+          "action": "click",
+          "selector": "[data-save-shift]",
+          "as": "aide"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"shift-saved\"]",
+          "as": "aide"
+        },
+        {
+          "action": "reload",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"shifts\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-shift-id=\"s1\"] [data-testid=\"shift-handoff\"]",
+          "text": "Family note",
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-shift-id=\"s1\"] [data-testid=\"shift-handoff\"]",
+          "text": "Aide note",
+          "as": "sibling"
+        }
+      ]
     }
   ]
 }

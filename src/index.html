@@ -89,6 +89,8 @@
     .spark polyline { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
     .spark polyline.second { opacity: .5; }
     .reading-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); }
+    .pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+    .handoff { border-left: 3px solid var(--accent); padding-left: 10px; }
     .search-row { margin-bottom: 12px; }
     .search-input {
       width: 100%; border: 1.5px solid var(--border-mid, var(--border, #d1d5db));
@@ -114,6 +116,8 @@ import {
   readingsByKind, defaultUnit, trendSeries, sparkline, toLocalInput, localInputToIso,
   VITALS_CURSOR_START, nextVitalsCursor, mergeOlderVitals, ownReading, canDeleteReading,
   createResettableLoad, readWhenQuiet, readAllPages, sortByDateTime, sortTasks, sortObservations, defaultRecordRange, recordRangeError, recordUrl,
+  isGuest, helpsHandsOn, logsOwnReading, sortShifts, runningShift, canEditShift, shiftLength, shiftTimesError, latestHandoff,
+  NOTE_AUDIENCES, isFamilyOnly, canEditReading, shiftChanges, fieldConflicts, mergeNote, nextRevision,
 } from "./logic.js";
 
 const CONTEXT = window.__CONTEXT_URL ?? "";
@@ -124,7 +128,7 @@ const HUB_MEMBER = window.__CURRENT_MEMBER ?? null;
 const REPORTS_URL = window.__REPORTS_URL ?? "";
 
 let members = [], memberMap = new Map(), me = null;
-let visits = [], tasks = [], appointments = [], observations = [];
+let visits = [], tasks = [], appointments = [], observations = [], shifts = [];
 // The people being cared for, and which one the lists are narrowed to ("" for
 // everyone). See logic.js for what the selection means with one profile, or none.
 let profiles = [];
@@ -139,6 +143,9 @@ function nowIso() { return new Date().toISOString(); }
 function uid(p) { return `${p}-${crypto.randomUUID()}`; }
 function memberName(id) { return memberNameOf(memberMap, id); }
 function canEdit() { return isAdult(me); }
+// Adults, and a guest: the family's paid caregiver. What they are offered is the
+// narrow set the hub lets a member who is not an adult write. See logic.js.
+function handsOn() { return helpsHandsOn(me, isAdult(me)); }
 function viewId() { return viewProfileId(profiles, selectedProfileId); }
 function inView() { return profileInView(profiles, selectedProfileId); }
 
@@ -159,6 +166,12 @@ async function db(sql, params = []) {
     if (write) writeVersion++;
   }
 }
+
+// Wording this app wrote for the reader is marked where it is thrown. A failed
+// write shows that wording, or the one fixed line for the action: never the
+// hub's own error text, which goes to the console.
+function userError(msg) { return Object.assign(new Error(msg), { forUser: true }); }
+function failText(e, line) { console.error(e); return e?.forUser ? e.message : line; }
 
 async function loadMembers() {
   if (!CONTEXT) {
@@ -207,6 +220,9 @@ function seedDemo() {
   appointments = [
     { id: "a1", profile_id: "p1", title: "Cardiology follow-up", provider: "Dr. Reyes", date: today(), time: "14:30", location: "Mercy Clinic, Suite 210", accompanied_by_id: "demo-1", accompanied_by_name: "Dana", notes: "Bring the medication list.", created_by: "demo-1", created_at: nowIso() },
   ];
+  shifts = [
+    { id: "s1", member_id: "demo-3", member_name: "Pat", profile_id: "p1", started_at: ago(1.2), ended_at: ago(1), shift_date: today(), summary: "Breakfast, a short walk, laundry.", handoff: "Ate little at lunch. The afternoon tablets are still in the box.", visibility: "everyone", created_at: ago(1.2), updated_at: ago(1) },
+  ];
   observations = [
     { id: "o1", profile_id: "p2", member_id: "demo-2", member_name: "Sam", category: "mood", note: "In good spirits today, enjoyed the walk.", observed_at: nowIso(), created_at: nowIso() },
     { id: "o2", profile_id: "p1", member_id: "demo-1", member_name: "Dana", category: "health", note: "Slight swelling in ankles, keeping an eye on it.", observed_at: nowIso(), created_at: nowIso() },
@@ -219,17 +235,20 @@ async function loadData() {
   // care history accrue. Visits/appointments keep 30 days of past rows so the
   // no-upcoming fallback still shows something recent; tasks keep every open
   // row (completed_at = '') plus 120 days of completed ones; observations keep
-  // a 120-day feed. The date param is the household-local day so the hub's
+  // a 120-day feed; shifts keep 30 days and whatever is still running. The date param is the household-local day so the hub's
   // `:today` preload binding matches this text. Profiles are read whole: the
   // table grows with the people being cared for, not with time.
-  const [v, t, a, o, r] = await Promise.all([
+  const [v, t, a, o, r, s] = await Promise.all([
     db("SELECT * FROM app_elder_care__visits WHERE date >= date(?, '-30 days') ORDER BY date ASC, time ASC", [today()]),
     db("SELECT * FROM app_elder_care__tasks WHERE completed_at = '' OR completed_at >= date(?, '-120 days') ORDER BY (status = 'done'), (due_date = ''), due_date ASC, created_at DESC", [today()]),
     db("SELECT * FROM app_elder_care__appointments WHERE date >= date(?, '-30 days') ORDER BY date ASC, time ASC", [today()]),
     db("SELECT * FROM app_elder_care__observations WHERE observed_at >= date(?, '-120 days') ORDER BY observed_at DESC", [today()]),
     db("SELECT * FROM app_elder_care__profiles ORDER BY created_at ASC"),
+    // Every shift still running, however long ago it started, so one nobody
+    // ended does not drop out of sight with its End button.
+    db("SELECT * FROM app_elder_care__shifts WHERE ended_at = '' OR started_at >= date(?, '-30 days') ORDER BY started_at DESC, id DESC", [today()]),
   ]);
-  visits = v.rows; tasks = t.rows; appointments = a.rows; observations = o.rows; profiles = r.rows;
+  visits = v.rows; tasks = t.rows; appointments = a.rows; observations = o.rows; profiles = r.rows; shifts = s.rows;
 }
 
 // ── Earlier history ────────────────────────────────────────────────────────
@@ -249,7 +268,7 @@ async function loadData() {
 // Log entries carry free text, so a page is kept well under the hub's 2 MiB
 // answer limit as well as its row limit.
 const HISTORY_PAGE = 500;
-const HISTORY_TABLES = ["visits", "tasks", "appointments", "observations"];
+const HISTORY_TABLES = ["visits", "tasks", "appointments", "observations", "shifts"];
 const historyPage = table => after => db(`SELECT * FROM app_elder_care__${table} WHERE id > ? ORDER BY id LIMIT ${HISTORY_PAGE}`, [after]).then(r => r.rows);
 let historyLoaded = false;
 let historyError = false;
@@ -262,11 +281,11 @@ function loadFullHistory() {
   // Each table is read whole, but a page at a time: one request for all of it
   // fails for good once the table passes the hub's row or size ceiling.
   historyPromise ??= readWhenQuiet(() => Promise.all(HISTORY_TABLES.map(table => readAllPages(historyPage(table), HISTORY_PAGE))), () => writeVersion)
-    .then(([v, t, a, o]) => {
+    .then(([v, t, a, o, s]) => {
       // Replace rather than append: every row of each table is here, so there
       // is no merge to get wrong and no chance of a duplicate. Sorted here, into
       // the order the launch reads use, because the pages come in id order.
-      visits = sortByDateTime(v); tasks = sortTasks(t); appointments = sortByDateTime(a); observations = sortObservations(o);
+      visits = sortByDateTime(v); tasks = sortTasks(t); appointments = sortByDateTime(a); observations = sortObservations(o); shifts = sortShifts(s);
       historyLoaded = true;
       historyError = false;
     })
@@ -280,8 +299,17 @@ function earlierHistoryHtml() {
   return `<button class="btn btn-ghost btn-sm" data-load-history style="width:100%;margin-top:12px">Show earlier history</button>`;
 }
 
+// A caregiver opens the app to start a shift or read the last handoff, so that
+// is the tab they land on. Once, so a retry after a failed load does not move
+// someone who has already chosen a tab.
+let landed = false;
 async function init() {
-  try { await Promise.all([loadMembers(), loadData()]); loadFailed = false; render(); }
+  try {
+    await Promise.all([loadMembers(), loadData()]);
+    loadFailed = false;
+    if (!landed) { landed = true; if (isGuest(me)) tab = "shifts"; }
+    render();
+  }
   catch { loadFailed = true; render(); }
 }
 
@@ -403,7 +431,7 @@ async function submitVisit(form) {
     publish("elder_care.visit_scheduled", {
       date: row.date, member_id: row.member_id, source_ref_id: calendarRef("visit", row.id),
     });
-  } catch (e) { btn.disabled = false; btn.textContent = "Schedule"; showError(e.message); }
+  } catch (e) { btn.disabled = false; btn.textContent = "Schedule"; showError(failText(e, "Couldn’t schedule the visit — try again.")); }
 }
 
 /* ── tasks ── */
@@ -435,27 +463,38 @@ async function submitTask(form) {
     tasks = [row, ...tasks];
     closeModal(); render();
     publish("elder_care.task_created", { title: row.title, assignee_id: row.assignee_id });
-  } catch (e) { btn.disabled = false; btn.textContent = "Add task"; showError(e.message); }
+  } catch (e) { btn.disabled = false; btn.textContent = "Add task"; showError(failText(e, "Couldn’t add the task — try again.")); }
 }
 async function toggleTask(id) {
   const t = tasks.find(x => x.id === id); if (!t) return;
+  if (!handsOn()) return;
   const status = t.status === "done" ? "open" : "done";
   const completed_at = status === "done" ? nowIso() : "";
+  // Who ticked it, cleared again when it is reopened. Status, time, and who are
+  // the whole of what the hub lets a person who is not an adult write here.
+  // Their name is kept beside the id: a guest's seat is removed when the job
+  // ends, and the task should still say who did it.
+  const completed_by = status === "done" ? (me?.id ?? "") : "";
+  const completed_by_name = status === "done" ? (me?.name ?? "") : "";
   try {
-    if (DB) await db(`UPDATE app_elder_care__tasks SET status = ?, completed_at = ? WHERE id = ?`, [status, completed_at, id]);
+    if (DB) {
+      const res = await db(`UPDATE app_elder_care__tasks SET status = ?, completed_at = ?, completed_by = ?, completed_by_name = ? WHERE id = ?`, [status, completed_at, completed_by, completed_by_name, id]);
+      // A tick the hub narrowed to nothing answers success with zero rows.
+      if (res.changed === 0) throw userError("That task could not be changed. It may have been removed.");
+    }
     // Looked up again: a history load can replace the list while the write is
     // out, and the row found before it is then no longer the one on screen.
     const now = tasks.find(x => x.id === id);
-    if (now) { now.status = status; now.completed_at = completed_at; }
+    if (now) { now.status = status; now.completed_at = completed_at; now.completed_by = completed_by; now.completed_by_name = completed_by_name; }
     render();
-  } catch (e) { showError(e.message); }
+  } catch (e) { showError(failText(e, "Couldn’t update the task — try again.")); }
 }
 async function deleteTask(id) {
   if (!(await hubConfirm({ message: "Delete this task?", destructive: true, confirmLabel: "Delete" }))) return;
   try {
     if (DB) await db(`DELETE FROM app_elder_care__tasks WHERE id = ?`, [id]);
     tasks = tasks.filter(x => x.id !== id); render();
-  } catch (e) { showError(e.message); }
+  } catch (e) { showError(failText(e, "Couldn’t delete the task — try again.")); }
 }
 
 /* ── appointments ── */
@@ -497,7 +536,7 @@ async function submitAppt(form) {
     publish("elder_care.appointment_added", {
       title: row.title, date: row.date, source_ref_id: calendarRef("appt", row.id),
     });
-  } catch (e) { btn.disabled = false; btn.textContent = "Add"; showError(e.message); }
+  } catch (e) { btn.disabled = false; btn.textContent = "Add"; showError(failText(e, "Couldn’t add the appointment — try again.")); }
 }
 async function claimAppt(id) {
   const a = appointments.find(x => x.id === id); if (!a || !me) return;
@@ -507,14 +546,14 @@ async function claimAppt(id) {
     const now = appointments.find(x => x.id === id);
     if (now) { now.accompanied_by_id = me.id; now.accompanied_by_name = me.name; }
     render();
-  } catch (e) { showError(e.message); }
+  } catch (e) { showError(failText(e, "Couldn’t update the appointment — try again.")); }
 }
 async function deleteAppt(id) {
   if (!(await hubConfirm({ message: "Remove this appointment?", destructive: true, confirmLabel: "Remove" }))) return;
   try {
     if (DB) await db(`DELETE FROM app_elder_care__appointments WHERE id = ?`, [id]);
     appointments = appointments.filter(x => x.id !== id); render();
-  } catch (e) { showError(e.message); return; }
+  } catch (e) { showError(failText(e, "Couldn’t remove the appointment — try again.")); return; }
   // After the row is gone, so a failed delete never retracts an entry for an
   // appointment that is still here. Carries the same reference the announcement
   // did — that is what lets a rule find the one calendar entry this made.
@@ -533,6 +572,11 @@ function obsModal() {
       ${aboutField("o-for", { required: true })}
       <div class="field"><label for="o-cat">Category</label><select id="o-cat">${CATEGORIES.map(c => `<option value="${c.id}">${c.label}</option>`).join("")}</select></div>
       <div class="field"><label for="o-note">What did you notice?</label><textarea id="o-note" placeholder="Share what the care circle should know" data-autofocus required></textarea></div>
+      <div class="field">
+        <label for="o-vis">Who can read it</label>
+        <select id="o-vis">${NOTE_AUDIENCES.map(a => `<option value="${a.id}">${a.label}</option>`).join("")}</select>
+        <span class="hint">Family only is read by the adults here. A guest, such as a paid caregiver, does not see it, and neither do children.</span>
+      </div>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" data-close>Cancel</button>
         <button type="submit" class="btn">Post</button>
@@ -545,20 +589,34 @@ async function submitObs(form) {
   if (form["o-for"] && !profileId) { form["o-for"].focus(); return; }
   const btn = modalEl.querySelector(".btn[type=submit]"); btn.disabled = true; btn.textContent = "Posting…";
   // observed_date is the household's own calendar day, for the record's dates.
-  const row = { id: uid("o"), profile_id: profileId, member_id: me.id, member_name: me.name, category: form["o-cat"].value, note, observed_at: nowIso(), observed_date: today(), created_at: nowIso() };
+  const row = { id: uid("o"), profile_id: profileId, member_id: me.id, member_name: me.name, category: form["o-cat"].value, note, observed_at: nowIso(), observed_date: today(), visibility: form["o-vis"].value === "family" ? "family" : "everyone", created_at: nowIso() };
   try {
-    if (DB) await db(`INSERT INTO app_elder_care__observations (id, profile_id, member_id, member_name, category, note, observed_at, observed_date, created_at) VALUES (?,?,?,?,?,?,?,?,?)`,
-      [row.id, row.profile_id, row.member_id, row.member_name, row.category, row.note, row.observed_at, row.observed_date, row.created_at]);
+    if (DB) await db(`INSERT INTO app_elder_care__observations (id, profile_id, member_id, member_name, category, note, observed_at, observed_date, visibility, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [row.id, row.profile_id, row.member_id, row.member_name, row.category, row.note, row.observed_at, row.observed_date, row.visibility, row.created_at]);
     observations = [row, ...observations];
     closeModal(); render();
-  } catch (e) { btn.disabled = false; btn.textContent = "Post"; showError(e.message); }
+  } catch (e) { btn.disabled = false; btn.textContent = "Post"; showError(failText(e, "Couldn’t post the note — try again.")); }
+}
+// An entry written before a caregiver joined can be taken out of their sight,
+// and one marked family only by mistake can be shown again.
+async function setObsAudience(id, visibility) {
+  if (!canEdit()) return;
+  try {
+    if (DB) {
+      const res = await db(`UPDATE app_elder_care__observations SET visibility = ? WHERE id = ?`, [visibility, id]);
+      if (res.changed === 0) throw userError("That note could not be changed. It may have been removed.");
+    }
+    const now = observations.find(x => x.id === id);
+    if (now) now.visibility = visibility;
+    render();
+  } catch (e) { showError(failText(e, "Couldn’t update the note — try again.")); }
 }
 async function deleteObs(id) {
   if (!(await hubConfirm({ message: "Delete this note?", destructive: true, confirmLabel: "Delete" }))) return;
   try {
     if (DB) await db(`DELETE FROM app_elder_care__observations WHERE id = ?`, [id]);
     observations = observations.filter(x => x.id !== id); render();
-  } catch (e) { showError(e.message); }
+  } catch (e) { showError(failText(e, "Couldn’t delete the note — try again.")); }
 }
 
 /* ── render ── */
@@ -589,11 +647,12 @@ function renderTasks() {
     <div class="card row-card ${t.status === "done" ? "done" : ""}" data-testid="task" data-task-id="${esc(t.id)}">
       <div style="flex:1">
         <label style="display:flex;gap:9px;align-items:flex-start;text-transform:none;letter-spacing:0;font-weight:400;cursor:pointer">
-          <input type="checkbox" style="width:auto;margin-top:3px" ${t.status === "done" ? "checked" : ""} ${canEdit() ? "" : "disabled"} data-toggle="${esc(t.id)}">
+          <input type="checkbox" style="width:auto;margin-top:3px" ${t.status === "done" ? "checked" : ""} ${handsOn() ? "" : "disabled"} data-toggle="${esc(t.id)}">
           <span>
             <span class="task-title" style="font-weight:700">${esc(t.title)}</span>
             ${t.detail ? `<div class="meta">${esc(t.detail)}</div>` : ""}
             <div class="meta">${t.assignee_name ? `${esc(t.assignee_name)}` : "Unassigned"}${t.due_date ? ` · due ${esc(fmtDate(t.due_date))}` : ""} ${aboutTag(t, "For ")}</div>
+            ${t.status === "done" && t.completed_by ? `<div class="meta" data-testid="task-done-by">Done by ${esc(t.completed_by_name || memberName(t.completed_by))}</div>` : ""}
           </span>
         </label>
       </div>
@@ -647,9 +706,10 @@ function renderObservationList() {
   return shown.map(o => { const c = catOf(o.category); return `
         <div class="card row-card" data-testid="observation" data-observation-id="${esc(o.id)}">
           <div>
-            <div class="who">${avatar(o.member_id, o.member_name)}<strong>${esc(o.member_name)}</strong> <span class="pill ${c.cls}">${esc(c.label)}</span> ${aboutTag(o, "About ")}</div>
+            <div class="who">${avatar(o.member_id, o.member_name)}<strong>${esc(o.member_name)}</strong> <span class="pill ${c.cls}">${esc(c.label)}</span> ${aboutTag(o, "About ")}${isFamilyOnly(o) ? ` <span class="pill warn" data-testid="family-only">Family only</span>` : ""}</div>
             <div style="margin-top:6px">${esc(o.note)}</div>
             <div class="meta">${esc(fmtWhen(o.observed_at))}</div>
+            ${canEdit() ? `<div class="actions" style="margin-top:6px"><button class="btn btn-ghost btn-sm" data-obs-audience="${esc(o.id)}" data-audience="${isFamilyOnly(o) ? "everyone" : "family"}">${isFamilyOnly(o) ? "Show to everyone" : "Make family only"}</button></div>` : ""}
           </div>
           ${canEdit() ? `<button class="btn btn-ghost btn-sm" data-del-obs="${esc(o.id)}" aria-label="Delete observation">${glyph("close")}</button>` : ""}
         </div>`; }).join("");
@@ -665,12 +725,423 @@ function renderLog() {
     ${earlierHistoryHtml()}`;
 }
 
+/* ── shifts ── */
+// The caregiver's log: arrived, left, what was done, and what the next person
+// should know. The hub stamps each entry with whoever wrote it, lets them change
+// their own, and lets an adult change or remove any (migrations/006).
+//
+// What is typed into the running shift's two boxes is kept here as it is typed.
+// The page redraws whenever a read lands, and a redraw would otherwise put back
+// what was last saved over a half-written handoff.
+//
+// `base` is the two notes as the hub last gave them to this card. A save writes
+// only a note that differs from it, and a note the hub now holds differently
+// was changed by somebody else: see saveRunningShift.
+const NOTE_FIELDS = ["summary", "handoff"];
+const noteText = v => String(v ?? "").trim();
+const noDraft = () => ({ id: "", summary: "", handoff: "", base: { summary: "", handoff: "" } });
+let shiftDraft = noDraft();
+function draftFor(shift) {
+  if (shiftDraft.id !== shift.id) shiftDraft = { id: shift.id, summary: shift.summary ?? "", handoff: shift.handoff ?? "", base: { summary: noteText(shift.summary), handoff: noteText(shift.handoff) } };
+  return shiftDraft;
+}
+function fmtClock(iso) {
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return String(iso ?? "");
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(when);
+}
+// "Oct 12, 9:02 AM to 1:15 PM · 4 h 13 min". The end carries its date when the
+// shift ran past midnight.
+function shiftSpan(shift) {
+  if (!shift.ended_at) return `Started ${fmtWhen(shift.started_at)}`;
+  const sameDay = new Date(shift.started_at).toDateString() === new Date(shift.ended_at).toDateString();
+  const length = shiftLength(shift.started_at, shift.ended_at);
+  return `${fmtWhen(shift.started_at)} to ${sameDay ? fmtClock(shift.ended_at) : fmtWhen(shift.ended_at)}${length ? ` · ${length}` : ""}`;
+}
+const SHIFT_GONE = "That shift could not be changed. It may have been removed, or it is not yours to change.";
+// Set before the insert goes out and cleared when it is back. The running
+// shift only joins the list once the hub has answered, so without this a second
+// tap in that gap passes the check below and starts a second shift.
+let startingShift = false;
+async function startShift() {
+  if (startingShift || !handsOn() || runningShift(shifts, me?.id)) return;
+  startingShift = true;
+  const now = nowIso();
+  const row = { id: uid("s"), member_id: me.id, member_name: me.name, profile_id: inView()?.id ?? "", started_at: now, ended_at: "", shift_date: today(), summary: "", handoff: "", visibility: "everyone", created_at: now, updated_at: now };
+  try {
+    if (DB) await db(`INSERT INTO app_elder_care__shifts (id, member_id, member_name, profile_id, started_at, ended_at, shift_date, summary, handoff, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [row.id, row.member_id, row.member_name, row.profile_id, row.started_at, row.ended_at, row.shift_date, row.summary, row.handoff, row.created_at, row.updated_at]);
+    shifts = sortShifts([row, ...shifts]);
+    render();
+  } catch (e) { showError(failText(e, "Couldn’t start the shift — try again.")); }
+  finally { startingShift = false; }
+}
+// Reads one shift again and puts it in the list in place of the copy held
+// here, or takes it out when it is gone. Returns the row, or null when it is
+// gone.
+//
+// A failed read THROWS. Every caller is a save that is about to decide what to
+// write from this answer, and the copy held here is exactly what the read was
+// for replacing: handing it back as if it were current would let the save go
+// ahead on an old row and write over whatever somebody else had saved since.
+// Nothing has been changed when it throws, so the person can simply try again.
+async function refreshShift(id) {
+  const row = (await db(`SELECT * FROM app_elder_care__shifts WHERE id = ?`, [id])).rows?.[0] ?? null;
+  shifts = row ? sortShifts(shifts.map(x => (x.id === id ? row : x))) : shifts.filter(x => x.id !== id);
+  return row;
+}
+// How many times a save reads the shift and tries its write before giving up.
+// Each write is guarded on the revision it read (`updated_at`, see
+// nextRevision in logic.js), so one that finds the shift changed underneath it
+// writes nothing and goes round again: the new read either shows a change to
+// something this person also changed, which is a conflict to show them, or a
+// change to something else, and the write then goes through.
+const SHIFT_SAVE_TRIES = 3;
+const SHIFT_BUSY = "This shift kept changing while it was being saved. Try again.";
+// Saves the two boxes of the running shift, and ends it when `end` is set.
+//
+// Two people write a running shift: the caregiver from this card, and any adult
+// from the Edit form. Neither page refreshes. So the shift is read again first,
+// and then:
+//   - a note this person did not touch is not written, and the box takes what
+//     the hub holds;
+//   - a note they did touch, which somebody else has changed since this card
+//     last heard from the hub, is not written either. Both texts go into the
+//     box, theirs first, for the person to check and save again;
+//   - a shift somebody has already ended is not written at all. What was typed
+//     is carried into the Edit form, where saving adds it to the ended shift.
+async function saveRunningShift(form, end) {
+  const id = form.dataset.shiftId;
+  const shift = shifts.find(x => x.id === id);
+  if (!shift || !canEditShift(me, shift, isAdult(me))) return;
+  const held = { summary: noteText(form["sh-summary"].value), handoff: noteText(form["sh-handoff"].value) };
+  // The notes as this card last had them from the hub, before any read below.
+  // "Did I change it" and "did somebody else" are both measured from here.
+  const known = { ...draftFor(shift).base };
+  // What each box held when this function last set it, so a box is only ever
+  // replaced when the person has not typed into it since.
+  const shown = { ...held };
+  const buttons = [...form.querySelectorAll("button")];
+  buttons.forEach(b => { b.disabled = true; });
+  // Ending closes the boxes for good, so nothing more may go into them once
+  // the text has been read. A plain save leaves them open: see below.
+  const boxes = [form["sh-summary"], form["sh-handoff"]];
+  if (end) boxes.forEach(b => { b.readOnly = true; });
+  // A save this function declines is an answer for the person, not a fault:
+  // it is said on the page and not logged as an error.
+  const decline = msg => { shiftSaved = ""; showError(msg); };
+  try {
+    let saved = false;
+    for (let attempt = 0; attempt < SHIFT_SAVE_TRIES && !saved; attempt++) {
+      // Throws when the read fails, before anything here has been changed: the
+      // boxes and the draft are as the person left them for the retry.
+      const fresh = DB ? await refreshShift(id) : shift;
+      if (!fresh) throw userError(SHIFT_GONE);
+      const draft = draftFor(fresh);
+      // A note the hub already holds exactly as it is here needs no write, and
+      // is nobody else's change either: it is this person's own save, made from
+      // another device or by a request whose answer never came back.
+      const touched = NOTE_FIELDS.filter(k => held[k] !== known[k] && noteText(fresh[k]) !== held[k]);
+      if (fresh.ended_at) {
+        // From the boxes as they are now, not as they were when the button was
+        // pressed: they stay open while the shift is read again.
+        const typed = NOTE_FIELDS.filter(k => noteText(draft[k]) !== noteText(fresh[k]));
+        const carry = Object.fromEntries(typed.map(k => [k, mergeNote(fresh[k], draft[k])]));
+        shiftDraft = noDraft(); shiftSaved = "";
+        render();
+        if (typed.length) shiftModal(id, { fields: carry, message: "This shift has already been ended. What you wrote is below, after the notes saved with it. Save to add it." });
+        else showError("This shift has already been ended. The log now shows it as it was saved.");
+        return;
+      }
+      const clash = touched.filter(k => noteText(fresh[k]) !== known[k]);
+      // The boxes stay open during a plain save, so `draft` may hold more than
+      // `held` by now. A box is only replaced when nothing was typed into it.
+      for (const k of NOTE_FIELDS) {
+        if (clash.includes(k)) draft[k] = mergeNote(fresh[k], draft[k]);
+        else if (!touched.includes(k) && noteText(draft[k]) === noteText(shown[k])) { draft[k] = fresh[k] ?? ""; shown[k] = draft[k]; }
+      }
+      draft.base = { summary: noteText(fresh.summary), handoff: noteText(fresh.handoff) };
+      if (clash.length) return decline("Someone else added to these notes while you were writing. Their text is now above yours. Check it and save again.");
+      const set = Object.fromEntries(touched.map(k => [k, held[k]]));
+      if (end) set.ended_at = nowIso();
+      const cols = Object.keys(set);
+      if (cols.length) {
+        set.updated_at = nextRevision(fresh.updated_at, nowIso()); cols.push("updated_at");
+        if (DB) {
+          // Column names come from the fixed lists above, never from the form.
+          // The write lands only on the row that was just read: still running,
+          // and at the same revision. Anything saved since then leaves it
+          // matching nothing, and the loop reads the shift again.
+          const res = await db(`UPDATE app_elder_care__shifts SET ${cols.map(c => `${c} = ?`).join(", ")} WHERE id = ? AND ended_at = '' AND updated_at = ?`, [...cols.map(c => set[c]), id, fresh.updated_at]);
+          if (res.changed === 0) continue;
+        }
+        // Looked up again: refreshShift replaced the row this function started with.
+        const current = shifts.find(x => x.id === id);
+        if (current) Object.assign(current, set);
+        for (const k of touched) draft.base[k] = held[k];
+      }
+      saved = true;
+    }
+    if (!saved) return decline(SHIFT_BUSY);
+    // "Saved." is only said when nothing was typed while the save was out.
+    if (end) { shiftDraft = noDraft(); shiftSaved = ""; }
+    else {
+      // A box holds either what was sent or what this function put there from
+      // the hub. Anything else was typed since.
+      const draft = shiftDraft.id === id ? shiftDraft : null;
+      shiftSaved = !draft || NOTE_FIELDS.every(k => [held[k], noteText(shown[k])].includes(noteText(draft[k]))) ? id : "";
+    }
+    render();
+  } catch (e) {
+    buttons.forEach(b => { b.disabled = false; });
+    boxes.forEach(b => { b.readOnly = false; });
+    showError(failText(e, "Couldn’t save the shift — try again."));
+  }
+}
+// The running shift whose notes were just saved, so the card can say so until
+// the next keystroke.
+let shiftSaved = "";
+
+// A shift as the form shows it: the times as the two fields hold them, the
+// notes trimmed. Two rows that read the same here are the same to the form.
+function shiftFormValues(shift) {
+  const local = iso => { const d = new Date(iso); return iso && !Number.isNaN(d.getTime()) ? toLocalInput(d) : ""; };
+  return { start: local(shift.started_at), end: local(shift.ended_at), profile_id: shift.profile_id ?? "", summary: noteText(shift.summary), handoff: noteText(shift.handoff) };
+}
+const SHIFT_FORM_CONTROLS = { start: "sh-start", end: "sh-end", profile_id: "sh-for", summary: "sh-edit-summary", handoff: "sh-edit-handoff" };
+// One form for a shift logged after the fact and for correcting an entry.
+// `carry` reopens it on the row as it is now with a person's own changes put
+// back in, and a line saying why: see submitShift and saveRunningShift.
+function shiftModal(id, carry = null) {
+  const shift = id ? shifts.find(x => x.id === id) : null;
+  if (id && !shift) return;
+  if (shift ? !canEditShift(me, shift, isAdult(me)) : !handsOn()) return;
+  const startText = shift ? shiftFormValues(shift).start : "";
+  const endText = shift ? shiftFormValues(shift).end : "";
+  // Whose shift this is, when it is somebody else's: an adult correcting it.
+  const whose = shift && shift.member_id !== me?.id ? ` for ${esc(shift.member_name || memberName(shift.member_id))}` : "";
+  const active = activeProfiles(profiles);
+  // The person a shift is with. Drawn from one profile up, like a visit, and an
+  // entry about someone since archived keeps naming them.
+  const aboutId = shift ? shift.profile_id : (inView()?.id ?? "");
+  const options = active.some(r => r.id === aboutId) || !aboutId ? active : [...active, { id: aboutId, name: profileName(profiles, aboutId) || "Someone" }];
+  const about = options.length
+    ? `<div class="field"><label for="sh-for">With</label><select id="sh-for"><option value="">Everyone</option>${options.map(r => `<option value="${esc(r.id)}" ${r.id === aboutId ? "selected" : ""}>${esc(r.name)}</option>`).join("")}</select></div>`
+    : "";
+  openModal(`
+    <h2>${shift ? `Edit the shift${whose}` : "Log a past shift"}</h2>
+    <form class="form" id="shift-form" data-shift-id="${esc(shift?.id ?? "")}">
+      <div class="error" id="shift-error" hidden></div>
+      <div class="two">
+        <div class="field"><label for="sh-start">Started</label><input id="sh-start" type="datetime-local" value="${esc(startText)}" ${shift ? "" : "data-autofocus"} required></div>
+        <div class="field"><label for="sh-end">Ended</label><input id="sh-end" type="datetime-local" value="${esc(endText)}" ${shift ? "" : "required"}></div>
+      </div>
+      ${shift ? `<span class="hint">Leave Ended empty while the shift is still running.</span>` : ""}
+      ${about}
+      <div class="field"><label for="sh-edit-summary">What was done</label><textarea id="sh-edit-summary" placeholder="Meals, help given, anything out of the ordinary">${esc(shift?.summary ?? "")}</textarea></div>
+      <div class="field"><label for="sh-edit-handoff">Handoff note</label><textarea id="sh-edit-handoff" placeholder="What the next person should know">${esc(shift?.handoff ?? "")}</textarea></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+        <button type="submit" class="btn">Save</button>
+      </div>
+    </form>`);
+  const form = modalEl.querySelector("#shift-form");
+  shiftFormOpened = readShiftForm(form);
+  shiftFormRow = shift ? shiftFormValues(shift) : null;
+  if (carry) {
+    for (const [key, value] of Object.entries(carry.fields ?? {})) {
+      const control = form[SHIFT_FORM_CONTROLS[key]];
+      if (control) control.value = value;
+    }
+    const box = form.querySelector("#shift-error");
+    box.textContent = carry.message; box.hidden = false;
+  }
+}
+// The row the form was drawn from, in form shape. A field that reads
+// differently on the row the hub holds at save time was changed by someone else.
+let shiftFormRow = null;
+// What the shift form showed when it opened. An edit is whatever differs from
+// this, and only that is written: see shiftChanges in logic.js.
+let shiftFormOpened = null;
+function readShiftForm(form) {
+  return {
+    start: form["sh-start"].value, end: form["sh-end"].value,
+    profile_id: form["sh-for"] ? form["sh-for"].value : "",
+    summary: form["sh-edit-summary"].value.trim(), handoff: form["sh-edit-handoff"].value.trim(),
+  };
+}
+async function submitShift(form) {
+  const box = form.querySelector("#shift-error");
+  const fail = msg => { box.textContent = msg; box.hidden = false; box.scrollIntoView({ block: "nearest" }); };
+  const id = form.dataset.shiftId;
+  const before = id ? shifts.find(x => x.id === id) : null;
+  if (id && !before) { closeModal(); return; }
+  if (before ? !canEditShift(me, before, isAdult(me)) : !handsOn()) { closeModal(); return; }
+  const held = readShiftForm(form);
+  const now = nowIso();
+  const btn = modalEl.querySelector(".btn[type=submit]");
+  const busy = () => { btn.disabled = true; btn.textContent = "Saving…"; };
+  const idle = () => { btn.disabled = false; btn.textContent = "Save"; };
+  // The household's calendar day a shift started on, like a reading's.
+  const dayOf = started_at => today(new Date(started_at)) ?? held.start.slice(0, 10);
+
+  if (!before) {
+    const started_at = localInputToIso(held.start, Date.now());
+    const ended_at = held.end ? localInputToIso(held.end, Date.now()) : "";
+    const problem = shiftTimesError(started_at, ended_at);
+    if (problem) return fail(problem);
+    busy();
+    const row = { id: uid("s"), member_id: me.id, member_name: me.name, profile_id: held.profile_id, started_at, ended_at, shift_date: dayOf(started_at), summary: held.summary, handoff: held.handoff, visibility: "everyone", created_at: now, updated_at: now };
+    try {
+      if (DB) await db(`INSERT INTO app_elder_care__shifts (id, member_id, member_name, profile_id, started_at, ended_at, shift_date, summary, handoff, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+        [row.id, row.member_id, row.member_name, row.profile_id, row.started_at, row.ended_at, row.shift_date, row.summary, row.handoff, row.created_at, row.updated_at]);
+      shifts = sortShifts([row, ...shifts]);
+      closeModal(); render();
+    } catch (e) { idle(); fail(failText(e, "Couldn’t save the shift — try again.")); }
+    return;
+  }
+
+  // Only what this person changed is written, and it is checked against the
+  // row as the hub holds it now, not the copy this page loaded. The caregiver
+  // and an adult both write a shift, from pages that do not refresh: a whole
+  // form written back from an old copy would wipe a handoff added since, or
+  // reopen a shift that has been ended.
+  const changed = shiftChanges(shiftFormOpened ?? {}, held);
+  if (!changed.length) { closeModal(); return; }
+  busy();
+  try {
+    let saved = false;
+    for (let attempt = 0; attempt < SHIFT_SAVE_TRIES && !saved; attempt++) {
+      // Throws when the read fails, and nothing is written: the form stays
+      // open as the person left it.
+      const fresh = DB ? await refreshShift(id) : before;
+      if (!fresh) throw userError(SHIFT_GONE);
+      // A field this person changed that somebody else has changed too is not
+      // written over. The form is opened again on the shift as it is now, with
+      // this person's other changes put back and, for a note, both texts in
+      // the box, theirs first.
+      const freshForm = shiftFormValues(fresh);
+      const clash = fieldConflicts(shiftFormRow ?? freshForm, freshForm, changed);
+      if (clash.length) {
+        const fields = {};
+        for (const key of changed) {
+          if (!clash.includes(key)) fields[key] = held[key];
+          else if (NOTE_FIELDS.includes(key)) fields[key] = mergeNote(freshForm[key], held[key]);
+        }
+        render();
+        shiftModal(id, { fields, message: "Someone else changed this shift while you had it open. The form now shows it as it is, with their notes above yours. Check it and save again." });
+        return;
+      }
+      // A time left as the form showed it keeps the stored instant: the field
+      // has no seconds, and reading it back would move the time.
+      const started_at = changed.includes("start") ? localInputToIso(held.start, Date.now()) : fresh.started_at;
+      const ended_at = !changed.includes("end") ? fresh.ended_at : held.end ? localInputToIso(held.end, Date.now()) : "";
+      const problem = shiftTimesError(started_at, ended_at);
+      if (problem) throw userError(problem);
+      const set = {};
+      if (changed.includes("profile_id")) set.profile_id = held.profile_id;
+      if (changed.includes("start")) { set.started_at = started_at; set.shift_date = dayOf(started_at); }
+      if (changed.includes("end")) set.ended_at = ended_at;
+      if (changed.includes("summary")) set.summary = held.summary;
+      if (changed.includes("handoff")) set.handoff = held.handoff;
+      set.updated_at = nextRevision(fresh.updated_at, nowIso());
+      // Column names come from the fixed list above, never from the form.
+      const cols = Object.keys(set);
+      if (DB) {
+        // The check above and this write are one decision only if the write
+        // lands on the row the check read. It names that row's revision, so a
+        // save that got in between leaves it matching nothing; the loop then
+        // reads the shift again and the check is made against what is there.
+        const res = await db(`UPDATE app_elder_care__shifts SET ${cols.map(c => `${c} = ?`).join(", ")} WHERE id = ? AND updated_at = ?`, [...cols.map(c => set[c]), id, fresh.updated_at]);
+        if (res.changed === 0) continue;
+      }
+      // Looked up again: refreshShift replaced the row this function started with.
+      const current = shifts.find(x => x.id === id);
+      if (current) Object.assign(current, set);
+      saved = true;
+    }
+    if (!saved) { idle(); return fail(SHIFT_BUSY); }
+    // The running card redraws from the row, not from a draft of the old text.
+    if (shiftDraft.id === id) shiftDraft = noDraft();
+    shifts = sortShifts(shifts);
+    closeModal(); render();
+  } catch (e) { idle(); fail(failText(e, "Couldn’t save the shift — try again.")); }
+}
+async function deleteShift(id) {
+  const shift = shifts.find(x => x.id === id); if (!shift || !canEdit()) return;
+  if (!(await hubConfirm({ message: "Remove this shift from the log?", description: `${shift.member_name || memberName(shift.member_id)}, ${shiftSpan(shift)}`, destructive: true, confirmLabel: "Remove" }))) return;
+  try {
+    if (DB) {
+      const res = await db(`DELETE FROM app_elder_care__shifts WHERE id = ?`, [id]);
+      if (res.changed === 0) throw userError("That shift could not be removed. It may already be gone.");
+    }
+    shifts = shifts.filter(x => x.id !== id); render();
+  } catch (e) { showError(failText(e, "Couldn’t remove the shift — try again.")); }
+}
+
+function runningShiftHtml(shift) {
+  const draft = draftFor(shift);
+  return `
+    <div class="card stack" data-testid="running-shift" data-shift-id="${esc(shift.id)}">
+      <div class="who"><strong>You are on shift</strong> <span class="pill good">since ${esc(fmtClock(shift.started_at))}</span> ${aboutTag(shift, "With ")}</div>
+      <form class="form" id="running-shift-form" data-shift-id="${esc(shift.id)}">
+        <div class="field"><label for="sh-summary">What was done</label><textarea id="sh-summary" placeholder="Meals, help given, anything out of the ordinary">${esc(draft.summary)}</textarea></div>
+        <div class="field"><label for="sh-handoff">Handoff note</label><textarea id="sh-handoff" placeholder="What the next person should know">${esc(draft.handoff)}</textarea></div>
+        <div class="actions">
+          <button type="submit" class="btn" data-end-shift>End shift</button>
+          <button type="button" class="btn btn-ghost" data-save-shift>Save notes</button>
+          ${shiftSaved === shift.id ? `<span class="hint" data-testid="shift-saved" role="status">Saved.</span>` : ""}
+        </div>
+      </form>
+    </div>`;
+}
+function shiftCardHtml(shift) {
+  const name = shift.member_name || memberName(shift.member_id);
+  return `
+    <div class="card stack" style="gap:8px" data-testid="shift" data-shift-id="${esc(shift.id)}">
+      <div class="row-card">
+        <div>
+          <div class="who">${avatar(shift.member_id, name)}<strong>${esc(name)}</strong> ${shift.ended_at ? "" : `<span class="pill good">On shift</span>`} ${aboutTag(shift, "With ")}</div>
+          <div class="meta" data-testid="shift-span">${esc(shiftSpan(shift))}</div>
+        </div>
+        <div class="actions" style="flex-wrap:nowrap">
+          ${canEditShift(me, shift, isAdult(me)) ? `<button class="btn btn-ghost btn-sm" data-edit-shift="${esc(shift.id)}">Edit</button>` : ""}
+          ${canEdit() ? `<button class="btn btn-ghost btn-sm" data-del-shift="${esc(shift.id)}" aria-label="Remove shift">${glyph("close")}</button>` : ""}
+        </div>
+      </div>
+      ${shift.summary ? `<div class="pre" data-testid="shift-summary">${esc(shift.summary)}</div>` : ""}
+      ${shift.handoff ? `<div class="handoff"><div class="meta" style="margin-top:0">Handoff</div><div class="pre" data-testid="shift-handoff">${esc(shift.handoff)}</div></div>` : ""}
+    </div>`;
+}
+function renderShifts() {
+  const mine = runningShift(shifts, me?.id);
+  const shown = forProfile(shifts, viewId());
+  // The running shift is drawn as its own card above, with the boxes to fill in.
+  const list = shown.filter(x => x !== mine);
+  const handoff = latestHandoff(shown);
+  const controls = handsOn() && !mine
+    ? `<div class="actions" style="flex-wrap:nowrap"><button class="btn btn-ghost btn-sm" data-add="shift">Log a past shift</button><button class="btn btn-sm" data-start-shift>Start shift</button></div>`
+    : "";
+  return `
+    <div class="section-head"><h2>Shift log</h2>${controls}</div>
+    <div class="stack">
+      ${mine ? runningShiftHtml(mine) : ""}
+      ${handoff ? `
+        <div class="card stack" style="gap:6px" data-testid="latest-handoff">
+          <div class="meta" style="margin-top:0">Latest handoff · ${esc(handoff.member_name || memberName(handoff.member_id))}, ${esc(fmtWhen(handoff.ended_at))}</div>
+          <div class="pre handoff">${esc(handoff.handoff)}</div>
+        </div>` : ""}
+      ${list.length ? list.map(shiftCardHtml).join("") : mine ? "" : `<div class="card empty"><div>${chickadee("nest", { size: 72 })}</div>No shifts logged yet.${handsOn() ? " Start one when you arrive, and leave a handoff note when you go." : ""}</div>`}
+    </div>`;
+}
+
 /* ── vitals ── */
 // Read when the Vitals tab is first opened, not at launch: no other screen
 // needs a reading, and these tables grow faster than any other in the app.
 //
-// Two tables hold readings (see migrations/005): what adults recorded, and what
-// a person logged for themselves. Both are read together and shown as one list.
+// Two tables hold readings (see migrations/005 and 006): what was recorded for
+// a person, by an adult or by the family's caregiver, and what a person logged
+// for themselves. Both are read together and shown as one list.
 let vitals = [];
 let openVitalKind = "";
 const VITALS_PAGE = 2000;
@@ -769,16 +1240,30 @@ function vitalFieldsHtml(kind, profile) {
     ${units.length > 1 ? "" : unitField}
     ${kind.hint ? `<span class="hint">${esc(kind.hint)}</span>` : ""}`;
 }
-function vitalModal() {
-  const who = inView();
-  if (!who || !canLogVitals(me, who, isAdult(me))) return;
-  const kind = vitalKind(openVitalKind) ?? VITAL_KINDS[0];
-  const opened = new Date();
+// One form for a new reading and for correcting one. A correction is offered to
+// whoever recorded the reading and to any adult, which is who the hub lets
+// change it. Only a reading recorded FOR a person can be corrected: one a
+// person logged for themselves is removed and logged again.
+function vitalModal(editId = "") {
+  const editing = editId ? vitals.find(x => x.id === editId && !x.own) : null;
+  if (editId && !editing) return;
+  const who = editing ? profiles.find(x => x.id === editing.profile_id) : inView();
+  if (!who) return;
+  if (editing ? !canEditReading(me, editing, isAdult(me)) : !canLogVitals(me, who, isAdult(me))) return;
+  const kind = editing ? vitalKind(editing.kind) : (vitalKind(openVitalKind) ?? VITAL_KINDS[0]);
+  if (!kind) return;
+  // A correction opens on the reading's own time. Left as shown, the stored
+  // instant is kept, seconds and all (see submitVital).
+  const taken = editing ? new Date(editing.measured_at) : new Date();
+  const opened = Number.isNaN(taken.getTime()) ? new Date() : taken;
+  const openedAt = editing && opened === taken ? editing.measured_at : opened.toISOString();
+  // The kind of a reading is not corrected: its numbers mean something else.
+  const kinds = editing ? [kind] : VITAL_KINDS;
   openModal(`
-    <h2>Log a reading for ${esc(who.name)}</h2>
-    <form class="form" id="vital-form" data-profile-id="${esc(who.id)}" data-opened-at="${opened.toISOString()}" data-opened-when="${toLocalInput(opened)}">
+    <h2>${editing ? "Correct a reading for" : "Log a reading for"} ${esc(who.name)}</h2>
+    <form class="form" id="vital-form" data-profile-id="${esc(who.id)}" data-reading-id="${esc(editing?.id ?? "")}" data-opened-at="${esc(openedAt)}" data-opened-when="${toLocalInput(opened)}">
       <div class="error" id="vital-error" hidden></div>
-      <div class="field"><label for="vt-kind">What</label><select id="vt-kind">${VITAL_KINDS.map(k => `<option value="${k.id}" ${k.id === kind.id ? "selected" : ""}>${k.label}</option>`).join("")}</select></div>
+      <div class="field"><label for="vt-kind">What</label><select id="vt-kind">${kinds.map(k => `<option value="${k.id}" ${k.id === kind.id ? "selected" : ""}>${k.label}</option>`).join("")}</select></div>
       <div id="vt-fields" class="form">${vitalFieldsHtml(kind, who)}</div>
       <div class="field"><label for="vt-when">When</label><input id="vt-when" type="datetime-local" value="${toLocalInput(opened)}" required></div>
       <div class="field"><label for="vt-note">Note</label><input id="vt-note" placeholder="After breakfast, left arm, felt dizzy"></div>
@@ -787,13 +1272,25 @@ function vitalModal() {
         <button type="submit" class="btn">Save</button>
       </div>
     </form>`);
+  if (editing) {
+    const form = modalEl.querySelector("#vital-form");
+    form["vt-value"].value = editing.value ?? "";
+    if (form["vt-value2"]) form["vt-value2"].value = editing.value2 ?? "";
+    // A unit this kind no longer offers is left on the default for the person
+    // to choose again; the number is checked against whichever they pick.
+    if (kind.ranges[editing.unit]) form["vt-unit"].value = editing.unit;
+    form["vt-note"].value = editing.note ?? "";
+  }
 }
 async function submitVital(form) {
   const box = form.querySelector("#vital-error");
   const fail = msg => { box.textContent = msg; box.hidden = false; box.scrollIntoView({ block: "nearest" }); };
   // The profile the form was opened for, not whoever is in view now.
   const who = profiles.find(x => x.id === form.dataset.profileId);
-  if (!who || !canLogVitals(me, who, isAdult(me))) { closeModal(); return; }
+  const editId = form.dataset.readingId;
+  const editing = editId ? vitals.find(x => x.id === editId && !x.own) : null;
+  if (editId && !editing) { closeModal(); return; }
+  if (!who || (editing ? !canEditReading(me, editing, isAdult(me)) : !canLogVitals(me, who, isAdult(me)))) { closeModal(); return; }
   const kindId = form["vt-kind"].value, unit = form["vt-unit"].value;
   const parsed = parseReading(kindId, unit, form["vt-value"].value, form["vt-value2"]?.value ?? "");
   if (!parsed.ok) return fail(parsed.error);
@@ -811,21 +1308,42 @@ async function submitVital(form) {
   // log entry made in the same minute under different days for a member away
   // from home. The device's day only when the SDK has no answer.
   const reading = { id: uid("x"), kind: kindId, value: parsed.value, value2: parsed.value2, unit, note: form["vt-note"].value.trim(), measured_at, measured_date: today(new Date(measured_at)) ?? typedWhen.slice(0, 10), created_at: nowIso() };
-  // An adult records into `vitals`, which the hub lets only adults write. Anyone
-  // else can only be logging for themselves, and writes `own_vitals`, where the
-  // hub stamps the row with the caller whatever this page sends.
-  const row = isAdult(me)
-    ? { ...reading, profile_id: who.id, recorded_by: me.id }
-    : ownReading({ ...reading, member_id: me.id });
+  // A person who is not an adult, logging for their own profile, writes
+  // `own_vitals`: it has no profile column, so the row can only ever be theirs.
+  // An adult and a caregiver write `vitals`, which names the profile. The hub
+  // stamps both tables with the caller whatever this page sends.
+  if (editing) {
+    const fixed = { value: reading.value, value2: reading.value2, unit: reading.unit, note: reading.note, measured_at: reading.measured_at, measured_date: reading.measured_date };
+    try {
+      if (DB) {
+        const res = await db(`UPDATE app_elder_care__vitals SET value = ?, value2 = ?, unit = ?, note = ?, measured_at = ?, measured_date = ? WHERE id = ?`,
+          [fixed.value, fixed.value2, fixed.unit, fixed.note, fixed.measured_at, fixed.measured_date, editId]);
+        // The hub narrows this to readings the caller may change, and answers
+        // success with zero rows when that leaves none.
+        if (res.changed === 0) throw userError("That reading could not be changed. It may have been removed, or it is not yours to change.");
+      }
+      // Looked up again, for the same reason as in toggleTask.
+      const current = vitals.find(x => x.id === editId && !x.own);
+      if (current) Object.assign(current, fixed);
+      openVitalKind = kindId;
+      closeModal(); render();
+    } catch (e) { btn.disabled = false; btn.textContent = "Save"; fail(failText(e, "Couldn’t save the reading — try again.")); }
+    return;
+  }
+  // The name goes beside the id the hub stamps, so the reading still says who
+  // took it once that person's seat is gone.
+  const row = logsOwnReading(me, who, isAdult(me))
+    ? ownReading({ ...reading, member_id: me.id })
+    : { ...reading, profile_id: who.id, recorded_by: me.id, recorded_by_name: me.name ?? "" };
   try {
     if (DB && row.own) await db(`INSERT INTO app_elder_care__own_vitals (id, member_id, kind, value, value2, unit, note, measured_at, measured_date, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
       [row.id, row.member_id, row.kind, row.value, row.value2, row.unit, row.note, row.measured_at, row.measured_date, row.created_at]);
-    else if (DB) await db(`INSERT INTO app_elder_care__vitals (id, profile_id, kind, value, value2, unit, note, measured_at, measured_date, recorded_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-      [row.id, row.profile_id, row.kind, row.value, row.value2, row.unit, row.note, row.measured_at, row.measured_date, row.recorded_by, row.created_at]);
+    else if (DB) await db(`INSERT INTO app_elder_care__vitals (id, profile_id, kind, value, value2, unit, note, measured_at, measured_date, recorded_by, recorded_by_name, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [row.id, row.profile_id, row.kind, row.value, row.value2, row.unit, row.note, row.measured_at, row.measured_date, row.recorded_by, row.recorded_by_name, row.created_at]);
     vitals = [row, ...vitals];
     openVitalKind = row.kind;
     closeModal(); render();
-  } catch (e) { btn.disabled = false; btn.textContent = "Save"; fail(e.message); }
+  } catch (e) { btn.disabled = false; btn.textContent = "Save"; fail(failText(e, "Couldn’t save the reading — try again.")); }
 }
 // Addressed by table as well as id: the two tables keep separate ids, and a
 // member can choose the id of a row they write.
@@ -838,10 +1356,10 @@ async function deleteVital(id, own) {
       const res = await db(`DELETE FROM ${v.own ? "app_elder_care__own_vitals" : "app_elder_care__vitals"} WHERE id = ?`, [id]);
       // The hub answers a delete it narrowed to nothing with success and zero
       // rows. Saying "deleted" then would be untrue until the next reload.
-      if (res.changed === 0) throw new Error("That reading could not be deleted. It may already be gone, or it is not yours to remove.");
+      if (res.changed === 0) throw userError("That reading could not be deleted. It may already be gone, or it is not yours to remove.");
     }
     vitals = vitals.filter(x => x !== v); render();
-  } catch (e) { showError(e.message); }
+  } catch (e) { showError(failText(e, "Couldn’t delete the reading — try again.")); }
 }
 
 function sparkHtml(readings) {
@@ -869,8 +1387,9 @@ function vitalCardHtml(kind, readings) {
         <div class="reading-row" data-testid="reading" data-reading-id="${esc(r.id)}" data-own="${r.own ? "1" : ""}">
           <div>
             <strong>${esc(fmtReading(r))}</strong>
-            <div class="meta">${esc(fmtWhen(r.measured_at))} · ${esc(memberName(r.recorded_by))}${r.note ? ` — ${esc(r.note)}` : ""}</div>
+            <div class="meta">${esc(fmtWhen(r.measured_at))} · ${esc(r.recorded_by_name || memberName(r.recorded_by))}${r.note ? ` — ${esc(r.note)}` : ""}</div>
           </div>
+          ${canEditReading(me, r, isAdult(me)) ? `<button class="btn btn-ghost btn-sm" data-edit-vital="${esc(r.id)}">Correct</button>` : ""}
           ${canDeleteReading(me, r, isAdult(me)) ? `<button class="btn btn-ghost btn-sm" data-del-vital="${esc(r.id)}" data-own="${r.own ? "1" : ""}" aria-label="Delete reading">${glyph("close")}</button>` : ""}
         </div>`).join("")}</div>` : ""}
     </div>`;
@@ -1053,7 +1572,7 @@ async function submitProfile(form) {
     // In the form, not on the page behind it: this form is taller than the
     // screen on a phone, and the page's own error line would sit out of sight.
     const box = modalEl.querySelector("#profile-error");
-    box.textContent = /unique/i.test(e.message) ? "That member already has a profile here." : e.message;
+    box.textContent = /unique/i.test(e.message) ? "That member already has a profile here." : failText(e, "Couldn’t save the profile — try again.");
     box.hidden = false; box.scrollIntoView({ block: "nearest" });
   }
 }
@@ -1069,7 +1588,7 @@ async function setProfileArchived(id, archived) {
     r.archived_at = archived_at; r.updated_at = now;
     if (archived && selectedProfileId === id) selectedProfileId = "";
     render();
-  } catch (e) { showError(e.message); }
+  } catch (e) { showError(failText(e, "Couldn’t update the profile — try again.")); }
 }
 // Log entries and appointments written before anyone had a profile name
 // nobody, and so show under everyone. This settles them in one step.
@@ -1087,7 +1606,7 @@ async function assignUntagged(id) {
     if (DB) await db(`UPDATE app_elder_care__appointments SET profile_id = ? WHERE profile_id = ''`, [id]);
     for (const a of appointments) if (!a.profile_id) a.profile_id = id;
     render();
-  } catch (e) { showError(e.message); }
+  } catch (e) { showError(failText(e, "Couldn’t update the entries — try again.")); }
 }
 
 function profileCardHtml(r) {
@@ -1169,6 +1688,7 @@ function profileChipsHtml() {
 
 const TABS = [
   { id: "schedule", label: "Schedule" },
+  { id: "shifts", label: "Shifts" },
   { id: "tasks", label: "Tasks" },
   { id: "appointments", label: "Appointments" },
   { id: "log", label: "Log" },
@@ -1187,7 +1707,10 @@ function render() {
       <div class="load-error" data-testid="load-error" role="alert"><span>Couldn’t load the care record.</span> <button type="button" class="load-error-retry" data-testid="load-retry">Try again</button></div>`;
     return;
   }
-  const body = tab === "schedule" ? renderSchedule() : tab === "tasks" ? renderTasks() : tab === "appointments" ? renderAppointments() : tab === "profile" ? renderProfile() : tab === "vitals" ? renderVitals() : renderLog();
+  const focused = document.activeElement;
+  const typing = focused && (focused.id === "sh-summary" || focused.id === "sh-handoff")
+    ? { id: focused.id, start: focused.selectionStart, end: focused.selectionEnd } : null;
+  const body = tab === "schedule" ? renderSchedule() : tab === "shifts" ? renderShifts() : tab === "tasks" ? renderTasks() : tab === "appointments" ? renderAppointments() : tab === "profile" ? renderProfile() : tab === "vitals" ? renderVitals() : renderLog();
   const active = activeProfiles(profiles);
   root.innerHTML = `
     <div class="topbar">
@@ -1198,10 +1721,26 @@ function render() {
     <div class="tabs">${TABS.map(t => `<button class="tab ${tab === t.id ? "active" : ""}" data-tab="${t.id}">${t.label}</button>`).join("")}</div>
     ${body}
     ${tab === "log" || tab === "profile" || tab === "vitals" ? "" : earlierHistoryHtml()}`;
+  // The running shift's boxes are part of the page, not a modal, so a redraw
+  // replaces the one being typed in. Its text is kept in shiftDraft; this puts
+  // the caret back.
+  if (typing) {
+    const box = document.getElementById(typing.id);
+    if (box) { box.focus(); box.setSelectionRange(typing.start, typing.end); }
+  }
 }
 
 // Re-render only the list on each keystroke so the search box keeps focus.
 document.addEventListener("input", (e) => {
+  if (e.target.id === "sh-summary" || e.target.id === "sh-handoff") {
+    const id = e.target.form?.dataset.shiftId ?? "";
+    if (shiftDraft.id !== id) shiftDraft = { ...noDraft(), id };
+    shiftDraft[e.target.id === "sh-summary" ? "summary" : "handoff"] = e.target.value;
+    // "Saved." stops being true at the next keystroke. Taken off in place: a
+    // redraw here would move the caret.
+    if (shiftSaved) { shiftSaved = ""; document.querySelector('[data-testid="shift-saved"]')?.remove(); }
+    return;
+  }
   if (e.target.id !== "search") return;
   searchQ = e.target.value;
   // Notes are encrypted at rest, so this match runs client-side over loaded
@@ -1243,6 +1782,13 @@ document.addEventListener("click", e => {
   if (add === "obs") return obsModal();
   if (add === "profile") return profileModal("");
   if (add === "vital") return vitalModal();
+  if (add === "shift") return shiftModal("");
+  if (t.dataset.startShift !== undefined) return startShift();
+  if (t.dataset.saveShift !== undefined) return saveRunningShift(t.form, false);
+  if (t.dataset.editShift) return shiftModal(t.dataset.editShift);
+  if (t.dataset.editVital) return vitalModal(t.dataset.editVital);
+  if (t.dataset.delShift) return deleteShift(t.dataset.delShift);
+  if (t.dataset.obsAudience) return setObsAudience(t.dataset.obsAudience, t.dataset.audience === "family" ? "family" : "everyone");
   if (t.dataset.editProfile) return profileModal(t.dataset.editProfile);
   if (t.dataset.archiveProfile) return setProfileArchived(t.dataset.archiveProfile, true);
   if (t.dataset.restoreProfile) return setProfileArchived(t.dataset.restoreProfile, false);
@@ -1284,6 +1830,8 @@ document.addEventListener("submit", e => {
   else if (id === "obs-form") submitObs(e.target);
   else if (id === "profile-form") submitProfile(e.target);
   else if (id === "vital-form") submitVital(e.target);
+  else if (id === "shift-form") submitShift(e.target);
+  else if (id === "running-shift-form") saveRunningShift(e.target, true);
 });
 
 async function deleteVisit(id) {
@@ -1291,7 +1839,7 @@ async function deleteVisit(id) {
   try {
     if (DB) await db(`DELETE FROM app_elder_care__visits WHERE id = ?`, [id]);
     visits = visits.filter(x => x.id !== id); render();
-  } catch (e) { showError(e.message); return; }
+  } catch (e) { showError(failText(e, "Couldn’t remove the visit — try again.")); return; }
   // Same ordering and the same unconditional publish as the appointment
   // path above, for the same reasons.
   await publishRetraction("elder_care.visit_cancelled", { source_ref_id: calendarRef("visit", id) });

@@ -1,4 +1,4 @@
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, readdirSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { describe, it, expect } from "vitest";
@@ -119,6 +119,114 @@ describe("cancellation events", () => {
       expect(body, `${fn} must await its retraction`).toContain("await publishRetraction(");
       expect(body.replace(/publishRetraction\(/g, ""), `${fn} must not fire-and-forget`).not.toMatch(/\bpublish\(/);
     }
+  });
+});
+
+// ── what a person who is not an adult may write ───────────────────────────────
+//
+// Four tables use a policy that lets every member reach every row and then
+// narrows the WRITE one column at a time (column_write_acls). That is what lets
+// a guest the family employs log a shift, record a reading and tick a task
+// without being able to do anything else. It also means a column with no entry
+// is writable by anyone, on anyone's row: a column added by a later migration
+// would be an open door until someone remembered to list it. So every column
+// the migrations create must be listed here.
+describe("column write rules cover every column", () => {
+  const migrationsDir = join(__dirname, "../migrations");
+  const sql = readdirSync(migrationsDir).filter(f => f.endsWith(".sql")).sort()
+    .map(f => readFileSync(join(migrationsDir, f), "utf-8").replace(/--.*$/gm, "")).join("\n");
+
+  function columnsOf(table) {
+    const full = `app_elder_care__${table}`;
+    const cols = [];
+    const create = new RegExp(`CREATE TABLE IF NOT EXISTS ${full} \\(([\\s\\S]*?)\\n\\);`).exec(sql);
+    expect(create, `${table} must be created by a migration`).toBeTruthy();
+    for (const line of create[1].split("\n")) {
+      const m = /^\s*([a-z_0-9]+)\s+(TEXT|INTEGER|REAL)\b/.exec(line);
+      if (m) cols.push(m[1]);
+    }
+    for (const m of sql.matchAll(new RegExp(`ALTER TABLE ${full} ADD COLUMN ([a-z_0-9]+)`, "g"))) cols.push(m[1]);
+    return cols;
+  }
+
+  // The columns a person who is not an adult may write on a row they did not
+  // create. Everything else needs an entry that names who may.
+  const OPEN = { tasks: ["status", "completed_at", "completed_by", "completed_by_name"], observations: [], vitals: [], shifts: [] };
+
+  for (const [table, open] of Object.entries(OPEN)) {
+    it(`${table}: every column is listed, except the ones left open on purpose`, () => {
+      const policy = manifest.row_policies[table];
+      expect(policy.kind).toBe("owner_or_visibility");
+      expect(policy.write_visibility_scoped).toBe(true);
+      expect(policy.delete_adult_only).toBe(true);
+      const columns = columnsOf(table);
+      expect(columns.length).toBeGreaterThan(5);
+      const listed = Object.keys(policy.column_write_acls);
+      expect([...listed, ...open].sort()).toEqual([...columns].sort());
+    });
+  }
+
+  it("lets nobody rewrite who wrote a shift or a reading, or the policy's own column", () => {
+    for (const [table, owner] of [["shifts", "member_id"], ["vitals", "recorded_by"]]) {
+      const acls = manifest.row_policies[table].column_write_acls;
+      expect(acls[owner]).toEqual({ writable_by: [], actions: ["update"] });
+      expect(acls.visibility).toEqual({ writable_by: [] });
+    }
+    expect(manifest.row_policies.tasks.column_write_acls.visibility).toEqual({ writable_by: [] });
+  });
+
+  it("keeps a task's and a log entry's content with the adults", () => {
+    for (const table of ["tasks", "observations"]) {
+      for (const [column, acl] of Object.entries(manifest.row_policies[table].column_write_acls)) {
+        if (column === "visibility" && table === "tasks") continue;
+        expect(acl, `${table}.${column}`).toEqual({ writable_by: ["adult"] });
+      }
+    }
+  });
+
+  it("makes family-only log entries an adults' tier and nothing wider", () => {
+    const policy = manifest.row_policies.observations;
+    expect(policy.everyone_values).toEqual(["everyone"]);
+    expect(policy.adult_values).toEqual(["family"]);
+    expect(policy.privileged_values).toBeUndefined();
+  });
+
+  it("leaves family-only entries out of the printed record", () => {
+    const view = manifest.reports.views.find(v => v.id === "observations");
+    expect(view.source.query).toContain("o.visibility = 'everyone'");
+  });
+});
+
+// ── two people saving one shift ───────────────────────────────────────────────
+//
+// A shift save reads the row, decides what to write, and writes. The decision
+// only holds if the write lands on the row that was read, and no lane here can
+// stage a second save in the gap between them. So the two things that close the
+// gap are pinned on the source: every UPDATE of a shift names the revision it
+// read, and a read that fails is never answered from the page's old copy.
+describe("shift saves are tied to the row they read", () => {
+  const indexHtml = readFileSync(join(__dirname, "../src/index.html"), "utf-8");
+
+  it("guards every shift UPDATE on the revision that was read", () => {
+    const updates = indexHtml.match(/UPDATE app_elder_care__shifts SET[^`]*`[^;]*;/g) ?? [];
+    expect(updates.length).toBe(2);
+    for (const statement of updates) {
+      expect(statement).toMatch(/WHERE id = \?( AND ended_at = '')? AND updated_at = \?`/);
+      expect(statement).toContain("fresh.updated_at]");
+    }
+  });
+
+  it("treats a write that matched nothing as a reason to read again, not as done", () => {
+    const zero = indexHtml.match(/if \(res\.changed === 0\) continue;/g) ?? [];
+    expect(zero.length).toBe(2);
+  });
+
+  it("lets a failed re-read of a shift fail the save", () => {
+    const start = indexHtml.indexOf("async function refreshShift(");
+    const body = indexHtml.slice(start, indexHtml.indexOf("\n}\n", start));
+    expect(start).toBeGreaterThan(-1);
+    expect(body).not.toMatch(/\bcatch\b/);
+    expect(body).not.toMatch(/\btry\b/);
   });
 });
 

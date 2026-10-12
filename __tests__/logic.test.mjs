@@ -9,6 +9,8 @@ import {
   vitalsFor, readingsByKind, defaultUnit, convertUnit, trendSeries, sparkline, toLocalInput, localInputToIso,
   VITALS_CURSOR_START, nextVitalsCursor, mergeOlderVitals, ownReading, canDeleteReading,
   createResettableLoad, readWhenQuiet, readAllPages, sortByDateTime, sortTasks, sortObservations, defaultRecordRange, recordRangeError, recordUrl,
+  isGuest, helpsHandsOn, logsOwnReading, sortShifts, runningShift, canEditShift, shiftLength, shiftTimesError, latestHandoff,
+  NOTE_AUDIENCES, isFamilyOnly, canEditReading, shiftChanges, SHIFT_FORM_FIELDS, fieldConflicts, mergeNote, nextRevision,
 } from "../src/logic.js";
 
 describe("fmtDate / fmtWhen", () => {
@@ -1053,5 +1055,282 @@ describe("history sort order", () => {
     expect(sortByDateTime(tie).map(r => r.id)).toEqual(["a", "b"]);
     expect(() => sortTasks([{ id: "x" }, { id: "y", status: "done" }])).not.toThrow();
     expect(() => sortObservations([{ id: "x" }, { id: "y", observed_at: null }])).not.toThrow();
+  });
+});
+
+// ── A paid caregiver ──────────────────────────────────────────────────────────
+
+describe("isGuest / helpsHandsOn", () => {
+  const aide = { id: "m-aide", role: "guest" };
+  const kid = { id: "m-kid", role: "child" };
+  const sam = { id: "m-sam", role: "adult" };
+
+  it("knows a guest by role and nothing else", () => {
+    expect(isGuest(aide)).toBe(true);
+    expect(isGuest(kid)).toBe(false);
+    expect(isGuest(sam)).toBe(false);
+    expect(isGuest(null)).toBe(false);
+    expect(isGuest({ id: "guest" })).toBe(false);
+  });
+
+  it("offers the hands-on controls to adults and guests, not to a child", () => {
+    expect(helpsHandsOn(sam, true)).toBe(true);
+    expect(helpsHandsOn(aide, false)).toBe(true);
+    expect(helpsHandsOn(kid, false)).toBe(false);
+    expect(helpsHandsOn(null, true)).toBe(false);
+  });
+});
+
+describe("a caregiver logging a reading", () => {
+  const aide = { id: "m-aide", role: "guest" };
+  const kid = { id: "m-kid", role: "child" };
+  const momProfile = { id: "p-mom", member_id: "m-mom", archived_at: "" };
+  const dadProfile = { id: "p-dad", member_id: null, archived_at: "" };
+
+  it("is offered for any active profile, linked to a member or not", () => {
+    expect(canLogVitals(aide, momProfile, false)).toBe(true);
+    expect(canLogVitals(aide, dadProfile, false)).toBe(true);
+    expect(canLogVitals(aide, { ...dadProfile, archived_at: "2026-01-01T00:00:00Z" }, false)).toBe(false);
+  });
+
+  it("is still not offered to a child for somebody else", () => {
+    expect(canLogVitals(kid, momProfile, false)).toBe(false);
+    expect(canLogVitals(kid, dadProfile, false)).toBe(false);
+  });
+
+  it("goes to the profile's table, and only a person logging for themselves uses their own", () => {
+    expect(logsOwnReading(aide, momProfile, false)).toBe(false);
+    expect(logsOwnReading({ id: "m-mom", role: "child" }, momProfile, false)).toBe(true);
+    // An adult writes the profile's table even for their own profile.
+    expect(logsOwnReading({ id: "m-mom", role: "adult" }, momProfile, true)).toBe(false);
+    // A guest who is themselves the person cared for logs as that person.
+    expect(logsOwnReading({ id: "m-mom", role: "guest" }, momProfile, false)).toBe(true);
+    expect(logsOwnReading(aide, dadProfile, false)).toBe(false);
+    expect(logsOwnReading(null, momProfile, false)).toBe(false);
+    expect(logsOwnReading(aide, null, false)).toBe(false);
+  });
+});
+
+describe("sortShifts / runningShift", () => {
+  const shifts = [
+    { id: "s-a", member_id: "m-aide", started_at: "2026-01-05T09:00:00.000Z", ended_at: "2026-01-05T13:00:00.000Z" },
+    { id: "s-c", member_id: "m-aide", started_at: "2026-01-07T09:00:00.000Z", ended_at: "" },
+    { id: "s-b", member_id: "m-sam", started_at: "2026-01-06T09:00:00.000Z", ended_at: "" },
+    { id: "s-d", member_id: "m-aide", started_at: "2026-01-07T09:00:00.000Z", ended_at: "" },
+  ];
+
+  it("puts the newest first, and breaks a tie on the id so the order is stable", () => {
+    expect(sortShifts(shifts).map(s => s.id)).toEqual(["s-d", "s-c", "s-b", "s-a"]);
+  });
+
+  it("does not reorder the list it was given", () => {
+    sortShifts(shifts);
+    expect(shifts.map(s => s.id)).toEqual(["s-a", "s-c", "s-b", "s-d"]);
+  });
+
+  it("finds a member's own running shift and nobody else's", () => {
+    expect(runningShift(shifts, "m-sam").id).toBe("s-b");
+    expect(runningShift(shifts, "m-aide").id).toBe("s-d");
+    expect(runningShift(shifts, "m-kid")).toBe(null);
+    expect(runningShift(shifts, "")).toBe(null);
+    expect(runningShift([shifts[0]], "m-aide")).toBe(null);
+  });
+});
+
+describe("canEditShift", () => {
+  const shift = { id: "s1", member_id: "m-aide" };
+  it("lets whoever logged it and any adult, and nobody else", () => {
+    expect(canEditShift({ id: "m-aide", role: "guest" }, shift, false)).toBe(true);
+    expect(canEditShift({ id: "m-sam", role: "adult" }, shift, true)).toBe(true);
+    expect(canEditShift({ id: "m-other", role: "guest" }, shift, false)).toBe(false);
+    expect(canEditShift({ id: "m-kid", role: "child" }, shift, false)).toBe(false);
+    expect(canEditShift(null, shift, true)).toBe(false);
+    expect(canEditShift({ id: "m-aide" }, null, false)).toBe(false);
+    // A member without an id owns nothing, even a row that also has none.
+    expect(canEditShift({ id: "" }, { id: "s2", member_id: "" }, false)).toBe(false);
+  });
+});
+
+describe("shiftLength", () => {
+  it("reads as hours and minutes", () => {
+    expect(shiftLength("2026-01-05T09:00:00.000Z", "2026-01-05T13:15:00.000Z")).toBe("4 h 15 min");
+    expect(shiftLength("2026-01-05T09:00:00.000Z", "2026-01-05T15:00:00.000Z")).toBe("6 h");
+    expect(shiftLength("2026-01-05T09:00:00.000Z", "2026-01-05T09:40:00.000Z")).toBe("40 min");
+    expect(shiftLength("2026-01-05T09:00:00.000Z", "2026-01-05T09:00:00.000Z")).toBe("0 min");
+  });
+  it("counts through midnight", () => {
+    expect(shiftLength("2026-01-05T22:00:00.000Z", "2026-01-06T06:30:00.000Z")).toBe("8 h 30 min");
+  });
+  it("says nothing for a running shift or times it cannot read", () => {
+    expect(shiftLength("2026-01-05T09:00:00.000Z", "")).toBe("");
+    expect(shiftLength("yesterday", "2026-01-05T09:00:00.000Z")).toBe("");
+    expect(shiftLength("2026-01-05T13:00:00.000Z", "2026-01-05T09:00:00.000Z")).toBe("");
+  });
+});
+
+describe("shiftTimesError", () => {
+  const start = "2026-01-05T09:00:00.000Z";
+  it("accepts a finished shift and one still running", () => {
+    expect(shiftTimesError(start, "2026-01-05T13:00:00.000Z")).toBe("");
+    expect(shiftTimesError(start, "")).toBe("");
+  });
+  it("refuses a start or an end the form could not turn into a time", () => {
+    expect(shiftTimesError(null, "")).toMatch(/started/);
+    expect(shiftTimesError("", "")).toMatch(/started/);
+    expect(shiftTimesError(start, null)).toMatch(/ended/);
+  });
+  it("refuses an end at or before the start", () => {
+    expect(shiftTimesError(start, start)).toMatch(/end after it starts/);
+    expect(shiftTimesError(start, "2026-01-05T08:59:00.000Z")).toMatch(/end after it starts/);
+  });
+  it("refuses a shift longer than two days, which is a wrong date", () => {
+    expect(shiftTimesError(start, "2026-01-07T09:00:00.000Z")).toBe("");
+    expect(shiftTimesError(start, "2026-01-07T09:01:00.000Z")).toMatch(/two days/);
+  });
+});
+
+describe("latestHandoff", () => {
+  const done = (id, ended_at, handoff) => ({ id, member_id: "m-aide", started_at: "2026-01-01T00:00:00.000Z", ended_at, handoff });
+  it("is the handoff of the shift that ended last, whenever it started", () => {
+    const shifts = [done("s1", "2026-01-05T13:00:00.000Z", "First"), done("s2", "2026-01-06T13:00:00.000Z", "Second")];
+    expect(latestHandoff(shifts).id).toBe("s2");
+    expect(latestHandoff([...shifts].reverse()).id).toBe("s2");
+  });
+  it("skips a shift that left no note, and one that is still running", () => {
+    const shifts = [
+      done("s1", "2026-01-05T13:00:00.000Z", "Read this"),
+      done("s2", "2026-01-06T13:00:00.000Z", "   "),
+      done("s3", "", "Not handed over yet"),
+    ];
+    expect(latestHandoff(shifts).id).toBe("s1");
+  });
+  it("is null when nobody has left one", () => {
+    expect(latestHandoff([])).toBe(null);
+    expect(latestHandoff([done("s1", "2026-01-05T13:00:00.000Z", "")])).toBe(null);
+  });
+});
+
+describe("NOTE_AUDIENCES / isFamilyOnly", () => {
+  it("offers exactly the two values the row policy knows, everyone first", () => {
+    expect(NOTE_AUDIENCES.map(a => a.id)).toEqual(["everyone", "family"]);
+  });
+  it("treats only the exact value as family only", () => {
+    expect(isFamilyOnly({ visibility: "family" })).toBe(true);
+    expect(isFamilyOnly({ visibility: "everyone" })).toBe(false);
+    // A row from before the column existed, and the demo's rows, have none.
+    expect(isFamilyOnly({})).toBe(false);
+    expect(isFamilyOnly(null)).toBe(false);
+  });
+});
+
+describe("canEditReading", () => {
+  const byAide = { id: "x1", profile_id: "p-mom", recorded_by: "m-aide" };
+  it("lets whoever recorded a reading and any adult correct it", () => {
+    expect(canEditReading({ id: "m-aide", role: "guest" }, byAide, false)).toBe(true);
+    expect(canEditReading({ id: "m-sam", role: "adult" }, byAide, true)).toBe(true);
+  });
+  it("lets nobody else", () => {
+    expect(canEditReading({ id: "m-other", role: "guest" }, byAide, false)).toBe(false);
+    expect(canEditReading({ id: "m-kid", role: "child" }, byAide, false)).toBe(false);
+    expect(canEditReading(null, byAide, true)).toBe(false);
+    expect(canEditReading({ id: "m-aide" }, null, false)).toBe(false);
+    expect(canEditReading({ id: "" }, { id: "x2", recorded_by: "" }, false)).toBe(false);
+  });
+  it("offers no correction for a reading a person logged for themselves, even to an adult", () => {
+    const own = ownReading({ id: "o1", member_id: "m-mom" });
+    expect(canEditReading({ id: "m-mom", role: "child" }, own, false)).toBe(false);
+    expect(canEditReading({ id: "m-sam", role: "adult" }, own, true)).toBe(false);
+  });
+});
+
+describe("shiftChanges", () => {
+  const opened = { start: "2026-01-05T09:00", end: "", profile_id: "p-mom", summary: "", handoff: "" };
+  it("is empty when nothing was touched", () => {
+    expect(shiftChanges(opened, { ...opened })).toEqual([]);
+  });
+  it("names only the fields that differ, in form order", () => {
+    expect(shiftChanges(opened, { ...opened, start: "2026-01-05T08:30" })).toEqual(["start"]);
+    expect(shiftChanges(opened, { ...opened, handoff: "Keys are with the neighbour", end: "2026-01-05T13:00" })).toEqual(["end", "handoff"]);
+    expect(shiftChanges(opened, { start: "a", end: "b", profile_id: "", summary: "c", handoff: "d" })).toEqual(SHIFT_FORM_FIELDS);
+  });
+  it("leaves the notes and the end out of an edit that only moved the start", () => {
+    // The page this was opened on still showed the shift running with no
+    // notes. Whatever the caregiver has written since must not be in the write.
+    const changed = shiftChanges(opened, { ...opened, start: "2026-01-05T08:45" });
+    expect(changed).not.toContain("summary");
+    expect(changed).not.toContain("handoff");
+    expect(changed).not.toContain("end");
+  });
+  it("sees a cleared field as a change, and a missing one as empty", () => {
+    expect(shiftChanges({ ...opened, end: "2026-01-05T13:00" }, opened)).toEqual(["end"]);
+    expect(shiftChanges({}, { start: "", end: "", profile_id: "", summary: "", handoff: "" })).toEqual([]);
+    expect(shiftChanges(null, { summary: "x" })).toEqual(["summary"]);
+  });
+});
+
+describe("fieldConflicts", () => {
+  const opened = { start: "2026-01-05T09:00", end: "", profile_id: "p-mom", summary: "", handoff: "" };
+  it("is empty when nobody else has changed what this person changed", () => {
+    expect(fieldConflicts(opened, { ...opened }, ["handoff"])).toEqual([]);
+    // Someone else ended the shift; this person only wrote a handoff.
+    expect(fieldConflicts(opened, { ...opened, end: "2026-01-05T13:00" }, ["handoff"])).toEqual([]);
+  });
+  it("names a field both people changed", () => {
+    const fresh = { ...opened, handoff: "Ate little at lunch", end: "2026-01-05T13:00" };
+    expect(fieldConflicts(opened, fresh, ["handoff"])).toEqual(["handoff"]);
+    expect(fieldConflicts(opened, fresh, ["start", "end", "handoff"])).toEqual(["end", "handoff"]);
+  });
+  it("reads a missing field as empty on either side", () => {
+    expect(fieldConflicts({}, { handoff: "" }, ["handoff"])).toEqual([]);
+    expect(fieldConflicts(null, { handoff: "x" }, ["handoff"])).toEqual(["handoff"]);
+  });
+});
+
+describe("mergeNote", () => {
+  it("puts their text first and mine after it", () => {
+    expect(mergeNote("Ate little at lunch", "Keys are with the neighbour")).toBe("Ate little at lunch\nKeys are with the neighbour");
+  });
+  it("is just the one text when the other is empty", () => {
+    expect(mergeNote("", "Mine")).toBe("Mine");
+    expect(mergeNote("Theirs", "")).toBe("Theirs");
+    expect(mergeNote(null, undefined)).toBe("");
+  });
+  it("repeats nothing when one already holds the other", () => {
+    expect(mergeNote("Ate little", "Ate little at lunch")).toBe("Ate little at lunch");
+    expect(mergeNote("Ate little at lunch", "little")).toBe("Ate little at lunch");
+    expect(mergeNote("Same", " Same ")).toBe("Same");
+  });
+  it("can be applied again to its own result without growing", () => {
+    const once = mergeNote("Theirs", "Mine");
+    expect(mergeNote("Theirs", once)).toBe(once);
+  });
+});
+
+describe("nextRevision", () => {
+  const read = "2026-01-05T13:00:00.000Z";
+  it("is the clock when the clock is ahead of what was read", () => {
+    expect(nextRevision(read, "2026-01-05T13:00:00.001Z")).toBe("2026-01-05T13:00:00.001Z");
+    expect(nextRevision(read, "2026-01-06T08:00:00.000Z")).toBe("2026-01-06T08:00:00.000Z");
+  });
+  it("is never the value that was read, so the guard on it cannot match a row somebody else has written", () => {
+    // Two writes in the same millisecond.
+    expect(nextRevision(read, read)).toBe("2026-01-05T13:00:00.001Z");
+    // A device whose clock is behind the one that wrote last.
+    expect(nextRevision(read, "2026-01-05T12:00:00.000Z")).toBe("2026-01-05T13:00:00.001Z");
+  });
+  it("always moves forward, however many slow-clock writes follow each other", () => {
+    let rev = read;
+    const seen = new Set([rev]);
+    for (let i = 0; i < 5; i++) {
+      const next = nextRevision(rev, "2026-01-01T00:00:00.000Z");
+      expect(next > rev).toBe(true);
+      expect(seen.has(next)).toBe(false);
+      seen.add(next); rev = next;
+    }
+  });
+  it("falls back to the clock for a stored value that is not a time", () => {
+    for (const bad of ["", null, undefined, "yesterday"]) {
+      expect(nextRevision(bad, "2026-01-05T13:00:00.000Z")).toBe("2026-01-05T13:00:00.000Z");
+    }
   });
 });

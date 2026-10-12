@@ -2,7 +2,7 @@
   "id": "elder-care",
   "name": "Elder Care",
   "version": "1.2.0",
-  "description": "Coordinate care for a loved one: a visit rotation, shared care tasks, appointment notes, and an observation log the whole care circle can see.",
+  "description": "Coordinate care for a loved one: a visit rotation, shared care tasks, appointment notes, an observation log the whole care circle can see, and a shift log for a paid caregiver.",
   "entrypoint": "index.html",
   "runtime": "static",
   "icon": "🧓",
@@ -14,7 +14,8 @@
     "tasks": {"sql": "SELECT * FROM app_elder_care__tasks WHERE completed_at = '' OR completed_at >= date(?, '-120 days') ORDER BY (status = 'done'), (due_date = ''), due_date ASC, created_at DESC", "params": [":today"]},
     "appointments": {"sql": "SELECT * FROM app_elder_care__appointments WHERE date >= date(?, '-30 days') ORDER BY date ASC, time ASC", "params": [":today"]},
     "observations": {"sql": "SELECT * FROM app_elder_care__observations WHERE observed_at >= date(?, '-120 days') ORDER BY observed_at DESC", "params": [":today"]},
-    "profiles": {"sql": "SELECT * FROM app_elder_care__profiles ORDER BY created_at ASC"}
+    "profiles": {"sql": "SELECT * FROM app_elder_care__profiles ORDER BY created_at ASC"},
+    "shifts": {"sql": "SELECT * FROM app_elder_care__shifts WHERE ended_at = '' OR started_at >= date(?, '-30 days') ORDER BY started_at DESC, id DESC", "params": [":today"]}
   },
   "db_plaintext_columns": ["category", "status", "date", "time", "kind"],
   "contexts": ["household", "shared_space"],
@@ -28,11 +29,74 @@
   },
   "row_policies": {
     "visits": { "kind": "adult_writable" },
-    "tasks": { "kind": "adult_writable" },
+    "tasks": {
+      "kind": "owner_or_visibility",
+      "member_column": "created_by",
+      "visibility_column": "visibility",
+      "everyone_values": ["everyone"],
+      "write_visibility_scoped": true,
+      "delete_adult_only": true,
+      "column_write_acls": {
+        "id": { "writable_by": ["adult"] },
+        "profile_id": { "writable_by": ["adult"] },
+        "title": { "writable_by": ["adult"] },
+        "detail": { "writable_by": ["adult"] },
+        "assignee_id": { "writable_by": ["adult"] },
+        "assignee_name": { "writable_by": ["adult"] },
+        "due_date": { "writable_by": ["adult"] },
+        "created_by": { "writable_by": ["adult"] },
+        "created_by_name": { "writable_by": ["adult"] },
+        "created_at": { "writable_by": ["adult"] },
+        "source_event_id": { "writable_by": ["adult"] },
+        "visibility": { "writable_by": [] }
+      }
+    },
     "appointments": { "kind": "adult_writable" },
-    "observations": { "kind": "adult_writable" },
+    "observations": {
+      "kind": "owner_or_visibility",
+      "member_column": "member_id",
+      "visibility_column": "visibility",
+      "everyone_values": ["everyone"],
+      "adult_values": ["family"],
+      "write_visibility_scoped": true,
+      "delete_adult_only": true,
+      "column_write_acls": {
+        "id": { "writable_by": ["adult"] },
+        "profile_id": { "writable_by": ["adult"] },
+        "member_id": { "writable_by": ["adult"] },
+        "member_name": { "writable_by": ["adult"] },
+        "category": { "writable_by": ["adult"] },
+        "note": { "writable_by": ["adult"] },
+        "observed_at": { "writable_by": ["adult"] },
+        "observed_date": { "writable_by": ["adult"] },
+        "created_at": { "writable_by": ["adult"] },
+        "visibility": { "writable_by": ["adult"] }
+      }
+    },
     "profiles": { "kind": "adult_writable" },
-    "vitals": { "kind": "adult_writable" },
+    "vitals": {
+      "kind": "owner_or_visibility",
+      "member_column": "recorded_by",
+      "visibility_column": "visibility",
+      "everyone_values": ["everyone"],
+      "write_visibility_scoped": true,
+      "delete_adult_only": true,
+      "column_write_acls": {
+        "id": { "writable_by": ["adult", "owner"] },
+        "profile_id": { "writable_by": ["adult", "owner"] },
+        "kind": { "writable_by": ["adult", "owner"] },
+        "value": { "writable_by": ["adult", "owner"] },
+        "value2": { "writable_by": ["adult", "owner"] },
+        "unit": { "writable_by": ["adult", "owner"] },
+        "note": { "writable_by": ["adult", "owner"] },
+        "measured_at": { "writable_by": ["adult", "owner"] },
+        "measured_date": { "writable_by": ["adult", "owner"] },
+        "created_at": { "writable_by": ["adult", "owner"] },
+        "recorded_by_name": { "writable_by": ["adult", "owner"] },
+        "recorded_by": { "writable_by": [], "actions": ["update"] },
+        "visibility": { "writable_by": [] }
+      }
+    },
     "own_vitals": {
       "kind": "owner_or_visibility",
       "member_column": "member_id",
@@ -42,6 +106,28 @@
       "column_write_acls": {
         "visibility": { "writable_by": [] },
         "member_id": { "writable_by": [], "actions": ["update"] }
+      }
+    },
+    "shifts": {
+      "kind": "owner_or_visibility",
+      "member_column": "member_id",
+      "visibility_column": "visibility",
+      "everyone_values": ["everyone"],
+      "write_visibility_scoped": true,
+      "delete_adult_only": true,
+      "column_write_acls": {
+        "id": { "writable_by": ["adult", "owner"] },
+        "member_name": { "writable_by": ["adult", "owner"] },
+        "profile_id": { "writable_by": ["adult", "owner"] },
+        "started_at": { "writable_by": ["adult", "owner"] },
+        "ended_at": { "writable_by": ["adult", "owner"] },
+        "shift_date": { "writable_by": ["adult", "owner"] },
+        "summary": { "writable_by": ["adult", "owner"] },
+        "handoff": { "writable_by": ["adult", "owner"] },
+        "created_at": { "writable_by": ["adult", "owner"] },
+        "updated_at": { "writable_by": ["adult", "owner"] },
+        "member_id": { "writable_by": [], "actions": ["update"] },
+        "visibility": { "writable_by": [] }
       }
     }
   },
@@ -63,6 +149,10 @@
       },
       {
         "column": "created_by",
+        "on_removed": "keep"
+      },
+      {
+        "column": "completed_by",
         "on_removed": "keep"
       }
     ],
@@ -95,6 +185,10 @@
       "on_removed": "keep"
     },
     "own_vitals": {
+      "column": "member_id",
+      "on_removed": "keep"
+    },
+    "shifts": {
       "column": "member_id",
       "on_removed": "keep"
     }
@@ -186,7 +280,7 @@
         "description": "Blood pressure, weight and other readings the family recorded, newest first within each kind. A blood pressure has two numbers.",
         "source": {
           "kind": "sql",
-          "query": "SELECT p.name AS person, CASE v.kind WHEN 'bp' THEN 'Blood pressure' WHEN 'pulse' THEN 'Pulse' WHEN 'weight' THEN 'Weight' WHEN 'glucose' THEN 'Blood sugar' WHEN 'temp' THEN 'Temperature' WHEN 'oxygen' THEN 'Oxygen' WHEN 'sleep' THEN 'Sleep' WHEN 'appetite' THEN 'Appetite' WHEN 'pain' THEN 'Pain' ELSE v.kind END AS measure, (CASE WHEN v.measured_date = '' THEN substr(v.measured_at, 1, 10) ELSE v.measured_date END) AS day, v.measured_at AS taken, v.value AS value, v.value2 AS second, v.unit AS unit, v.note AS note, v.recorded_by AS recorded_by FROM app_elder_care__vitals v JOIN app_elder_care__profiles p ON p.id = v.profile_id WHERE p.archived_at = '' AND (CASE WHEN v.measured_date = '' THEN substr(v.measured_at, 1, 10) ELSE v.measured_date END) >= :range_start AND (CASE WHEN v.measured_date = '' THEN substr(v.measured_at, 1, 10) ELSE v.measured_date END) <= :range_end ORDER BY p.created_at, p.id, v.kind, v.measured_at DESC"
+          "query": "SELECT p.name AS person, CASE v.kind WHEN 'bp' THEN 'Blood pressure' WHEN 'pulse' THEN 'Pulse' WHEN 'weight' THEN 'Weight' WHEN 'glucose' THEN 'Blood sugar' WHEN 'temp' THEN 'Temperature' WHEN 'oxygen' THEN 'Oxygen' WHEN 'sleep' THEN 'Sleep' WHEN 'appetite' THEN 'Appetite' WHEN 'pain' THEN 'Pain' ELSE v.kind END AS measure, (CASE WHEN v.measured_date = '' THEN substr(v.measured_at, 1, 10) ELSE v.measured_date END) AS day, v.measured_at AS taken, v.value AS value, v.value2 AS second, v.unit AS unit, v.note AS note, v.recorded_by AS recorded_by, v.recorded_by_name AS recorded_name FROM app_elder_care__vitals v JOIN app_elder_care__profiles p ON p.id = v.profile_id WHERE p.archived_at = '' AND (CASE WHEN v.measured_date = '' THEN substr(v.measured_at, 1, 10) ELSE v.measured_date END) >= :range_start AND (CASE WHEN v.measured_date = '' THEN substr(v.measured_at, 1, 10) ELSE v.measured_date END) <= :range_end ORDER BY p.created_at, p.id, v.kind, v.measured_at DESC"
         },
         "columns": [
           {
@@ -227,6 +321,10 @@
             "key": "recorded_by",
             "label": "Recorded by",
             "format": "member"
+          },
+          {
+            "key": "recorded_name",
+            "label": "Name when recorded"
           }
         ]
       },
@@ -278,10 +376,10 @@
       {
         "id": "observations",
         "title": "Observation log",
-        "description": "What the care circle noticed, newest first. Entries that name nobody are listed last.",
+        "description": "What the care circle noticed, newest first. Entries that name nobody are listed last. Notes marked family only are left out.",
         "source": {
           "kind": "sql",
-          "query": "SELECT p.name AS person, (CASE WHEN o.observed_date = '' THEN substr(o.observed_at, 1, 10) ELSE o.observed_date END) AS day, o.observed_at AS noted, CASE o.category WHEN 'general' THEN 'General' WHEN 'health' THEN 'Health' WHEN 'mood' THEN 'Mood' WHEN 'meds' THEN 'Medication' ELSE o.category END AS category, o.note AS note, o.member_id AS noted_by FROM app_elder_care__observations o LEFT JOIN app_elder_care__profiles p ON p.id = o.profile_id WHERE (o.profile_id = '' OR p.archived_at = '') AND (CASE WHEN o.observed_date = '' THEN substr(o.observed_at, 1, 10) ELSE o.observed_date END) >= :range_start AND (CASE WHEN o.observed_date = '' THEN substr(o.observed_at, 1, 10) ELSE o.observed_date END) <= :range_end ORDER BY (p.created_at IS NULL), p.created_at, p.id, o.observed_at DESC"
+          "query": "SELECT p.name AS person, (CASE WHEN o.observed_date = '' THEN substr(o.observed_at, 1, 10) ELSE o.observed_date END) AS day, o.observed_at AS noted, CASE o.category WHEN 'general' THEN 'General' WHEN 'health' THEN 'Health' WHEN 'mood' THEN 'Mood' WHEN 'meds' THEN 'Medication' ELSE o.category END AS category, o.note AS note, o.member_id AS noted_by FROM app_elder_care__observations o LEFT JOIN app_elder_care__profiles p ON p.id = o.profile_id WHERE o.visibility = 'everyone' AND (o.profile_id = '' OR p.archived_at = '') AND (CASE WHEN o.observed_date = '' THEN substr(o.observed_at, 1, 10) ELSE o.observed_date END) >= :range_start AND (CASE WHEN o.observed_date = '' THEN substr(o.observed_at, 1, 10) ELSE o.observed_date END) <= :range_end ORDER BY (p.created_at IS NULL), p.created_at, p.id, o.observed_at DESC"
         },
         "columns": [
           {

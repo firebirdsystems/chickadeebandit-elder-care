@@ -288,15 +288,31 @@ export function vitalUnits(kind) {
 }
 
 /**
- * Who may record a reading for a profile: any adult, and the person the profile
- * is linked to. The hub enforces both, through two tables. An adult writes
- * `vitals`, which only adults may write. Anyone else writes `own_vitals`, where
- * the hub stamps the row with the caller, so it can only count toward the
- * caller's own profile (see vitalsFor).
+ * Who the page offers "Log a reading" to for a profile: any adult, a guest (the
+ * family's paid caregiver), and the person the profile is linked to.
+ *
+ * Two tables hold readings. `vitals` carries a `profile_id`, and the hub stamps
+ * `recorded_by` with whoever wrote the row: an adult may change or remove any
+ * of them, anyone else may change only the ones they recorded and remove none.
+ * `own_vitals` has no `profile_id` at all, so a row there can only count toward
+ * the profile linked to its writer (see vitalsFor).
+ *
+ * The hub does not tell a guest from a child, so this is where they part: a
+ * child is offered nothing for somebody else's profile.
  */
 export function canLogVitals(member, profile, adult) {
   if (!member || !profile || profile.archived_at) return false;
-  return !!adult || (!!profile.member_id && profile.member_id === member.id);
+  return helpsHandsOn(member, adult) || (!!profile.member_id && profile.member_id === member.id);
+}
+
+/**
+ * Whether a reading this member logs for this profile goes to `own_vitals`:
+ * they are not an adult and the profile is their own. Asked before the guest
+ * rule on purpose, so a person keeps logging for themselves into the table
+ * where the row can never be attached to anyone else.
+ */
+export function logsOwnReading(member, profile, adult) {
+  return !adult && !!member && !!profile?.member_id && profile.member_id === member.id;
 }
 
 /**
@@ -314,6 +330,16 @@ export function ownReading(row) {
 export function canDeleteReading(member, reading, adult) {
   if (!member || !reading) return false;
   return reading.own ? (!!member.id && reading.member_id === member.id) : !!adult;
+}
+
+/**
+ * Who may correct a reading, mirroring the hub: any adult, and whoever recorded
+ * it. A reading a person logged for themselves is not corrected: its writer
+ * removes it and logs it again.
+ */
+export function canEditReading(member, reading, adult) {
+  if (!member || !reading || reading.own) return false;
+  return !!adult || (!!member.id && reading.recorded_by === member.id);
 }
 
 /** A typed number, with a comma accepted as the decimal mark. NaN when it is not one. */
@@ -657,4 +683,158 @@ export function sortTasks(rows) {
 /** Log entries newest first. */
 export function sortObservations(rows) {
   return [...rows].sort((a, b) => text(b.observed_at).localeCompare(text(a.observed_at)) || byId(a, b));
+}
+
+// ── A paid caregiver ──────────────────────────────────────────────────────────
+//
+// Someone the family employs signs in as a GUEST of the household: a named
+// login with an end date. The hub treats a guest as a member who is not an
+// adult, and the row policies give such a member a narrow set of writes: their
+// own shift entries, readings they record, and ticking a task. Everything else
+// here stays with the adults.
+
+export function isGuest(member) {
+  return !!member && member.role === "guest";
+}
+
+/**
+ * Who the page offers the hands-on controls to: starting a shift, ticking a
+ * task, logging a reading for someone. Adults and guests.
+ *
+ * This is what the page OFFERS, not what the hub allows. The hub allows the
+ * same narrow writes to every member who is not an adult, a child included,
+ * and stamps each one with who made it.
+ */
+export function helpsHandsOn(member, adult) {
+  return !!member && (!!adult || isGuest(member));
+}
+
+/** Shifts newest first. */
+export function sortShifts(rows) {
+  return [...rows].sort((a, b) => text(b.started_at).localeCompare(text(a.started_at)) || text(b.id).localeCompare(text(a.id)));
+}
+
+/** The shift this member has running, or null. The newest, should there be two. */
+export function runningShift(shifts, memberId) {
+  if (!memberId) return null;
+  return sortShifts(shifts.filter(s => s.member_id === memberId && !s.ended_at))[0] ?? null;
+}
+
+/** Who may change a shift entry, mirroring the hub: whoever logged it, and any adult. */
+export function canEditShift(member, shift, adult) {
+  if (!member || !shift) return false;
+  return !!adult || (!!member.id && shift.member_id === member.id);
+}
+
+/** The fields of the shift form, in the order they are compared. */
+export const SHIFT_FORM_FIELDS = ["start", "end", "profile_id", "summary", "handoff"];
+
+/**
+ * The fields of a shift edit that the person actually changed. `opened` is
+ * what the form showed when it opened and `now` what it holds.
+ *
+ * A shift is edited from a copy of the row that may be old: the page does not
+ * refresh, and the caregiver and an adult both write the same entry. Writing
+ * the whole form back would let someone correcting a start time, from a page
+ * that still showed the shift running with no notes, wipe the handoff and
+ * reopen a shift that had since been ended. Only what was touched is written.
+ */
+export function shiftChanges(opened, now) {
+  return SHIFT_FORM_FIELDS.filter(key => (opened?.[key] ?? "") !== (now?.[key] ?? ""));
+}
+
+/**
+ * Of the fields this person changed, the ones somebody else changed too while
+ * the form was open. `openedRow` is the shift as the form was drawn from it and
+ * `freshRow` the shift as the hub holds it now, both in form shape.
+ *
+ * Writing only the touched fields protects what this person did not touch. It
+ * does not protect the field they did: an adult typing a handoff into a box
+ * that looked empty would still replace the one the caregiver saved a minute
+ * ago. Those are the fields named here, and they are not written.
+ */
+export function fieldConflicts(openedRow, freshRow, changed) {
+  return changed.filter(key => (openedRow?.[key] ?? "") !== (freshRow?.[key] ?? ""));
+}
+
+/**
+ * The `updated_at` a write gives a shift, given the one it read.
+ *
+ * `updated_at` is the shift's revision: a save reads the row, decides what to
+ * write, and writes only `WHERE updated_at` is still what it read, so a save
+ * that landed in between is found by the hub, in the same statement, and not
+ * by a check made before it. That only works if no write ever leaves the value
+ * as it found it or sets one an earlier reader could be holding. So the new
+ * value is the clock, or one millisecond past the old value when the clock is
+ * not ahead of it (a device whose clock is slow, or two writes in one
+ * millisecond): always later than what was read.
+ */
+export function nextRevision(previous, nowIso) {
+  const was = Date.parse(previous ?? "");
+  if (!Number.isFinite(was) || Date.parse(nowIso) > was) return nowIso;
+  return new Date(was + 1).toISOString();
+}
+
+/**
+ * Two people's text for the same note, as one: theirs first, then mine. When
+ * one already holds the other, the longer is kept and nothing is repeated.
+ */
+export function mergeNote(theirs, mine) {
+  const a = String(theirs ?? "").trim(), b = String(mine ?? "").trim();
+  if (!a || b.includes(a)) return b;
+  if (!b || a.includes(b)) return a;
+  return `${a}\n${b}`;
+}
+
+/**
+ * How long a shift ran, as "4 h 15 min", "40 min" or "6 h". "" while it is
+ * still running, and for times that cannot be read or run backwards.
+ */
+export function shiftLength(startedAt, endedAt) {
+  if (!endedAt) return "";
+  const minutes = Math.round((Date.parse(endedAt) - Date.parse(startedAt)) / 60_000);
+  if (!Number.isFinite(minutes) || minutes < 0) return "";
+  const h = Math.floor(minutes / 60), m = minutes % 60;
+  if (!h) return `${m} min`;
+  return m ? `${h} h ${m} min` : `${h} h`;
+}
+
+/**
+ * Why a shift's times cannot be saved, or "". Both are ISO instants, or null
+ * when the form's value was not a usable time (localInputToIso refuses a time
+ * in the future). `endedAt` is "" for a shift that is still running.
+ */
+export function shiftTimesError(startedAt, endedAt) {
+  if (!startedAt) return "Choose when the shift started. It cannot be in the future.";
+  if (endedAt === null) return "Choose when the shift ended. It cannot be in the future.";
+  if (endedAt && endedAt <= startedAt) return "The shift must end after it starts.";
+  // Longer than this is a wrong date, not a long day.
+  if (endedAt && Date.parse(endedAt) - Date.parse(startedAt) > 48 * 3_600_000) return "A shift cannot be longer than two days. Check the dates.";
+  return "";
+}
+
+/**
+ * The note the next person should read first: the handoff of the most recently
+ * ENDED shift that left one. A shift still running has not handed anything
+ * over yet. null when there is none.
+ */
+export function latestHandoff(shifts) {
+  return [...shifts]
+    .filter(s => s.ended_at && text(s.handoff).trim() !== "")
+    .sort((a, b) => text(b.ended_at).localeCompare(text(a.ended_at)) || text(b.id).localeCompare(text(a.id)))[0] ?? null;
+}
+
+// ── Family-only log entries ───────────────────────────────────────────────────
+//
+// A log entry is read by everyone helping unless its author marks it family
+// only. The hub then returns it to the adults of the household and to nobody
+// else: not a guest, and not a child.
+
+export const NOTE_AUDIENCES = [
+  { id: "everyone", label: "Everyone helping" },
+  { id: "family", label: "Family only" },
+];
+
+export function isFamilyOnly(observation) {
+  return observation?.visibility === "family";
 }
