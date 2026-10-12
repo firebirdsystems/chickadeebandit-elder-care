@@ -83,6 +83,12 @@
     .profile dd { overflow-wrap: anywhere; }
     .profile dd.long { white-space: pre-wrap; }
     .hint { color: var(--muted); font-size: .78rem; }
+    .vital-now { font-size: 1.3rem; font-weight: 800; line-height: 1.2; }
+    .vital-now .unit { font-size: .8rem; font-weight: 600; color: var(--muted); }
+    .spark { width: 120px; height: 32px; flex-shrink: 0; color: var(--accent); }
+    .spark polyline { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+    .spark polyline.second { opacity: .5; }
+    .reading-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); }
     .search-row { margin-bottom: 12px; }
     .search-input {
       width: 100%; border: 1.5px solid var(--border-mid, var(--border, #d1d5db));
@@ -104,6 +110,10 @@ import {
   PROFILE_FIELDS, activeProfiles, archivedProfiles, viewProfileId, profileInView,
   forProfile, showsProfileTag, profileName, linkableMembers, untaggedCount,
   profileEntries, profileChanges,
+  VITAL_KINDS, vitalKind, vitalUnits, canLogVitals, parseReading, fmtReading, vitalsFor,
+  readingsByKind, defaultUnit, trendSeries, sparkline, toLocalInput, localInputToIso,
+  VITALS_CURSOR_START, nextVitalsCursor, mergeOlderVitals, ownReading, canDeleteReading,
+  createResettableLoad, readWhenQuiet, readAllPages, sortByDateTime, sortTasks, sortObservations, defaultRecordRange, recordRangeError, recordUrl,
 } from "./logic.js";
 
 const CONTEXT = window.__CONTEXT_URL ?? "";
@@ -111,6 +121,7 @@ const DB = window.__DB_URL ?? "";
 const EVENTS_URL = window.__EVENTS_URL ?? "/api/events";
 const APP_ID = window.__APP_ID ?? "elder-care";
 const HUB_MEMBER = window.__CURRENT_MEMBER ?? null;
+const REPORTS_URL = window.__REPORTS_URL ?? "";
 
 let members = [], memberMap = new Map(), me = null;
 let visits = [], tasks = [], appointments = [], observations = [];
@@ -131,12 +142,22 @@ function canEdit() { return isAdult(me); }
 function viewId() { return viewProfileId(profiles, selectedProfileId); }
 function inView() { return profileInView(profiles, selectedProfileId); }
 
+// Moves when a write starts and again when it ends, whatever the outcome. A read
+// that is going to replace the lists compares it before and after: see
+// readWhenQuiet in logic.js.
+let writeVersion = 0;
 async function db(sql, params = []) {
   if (!DB) return { rows: [] };
-  const res = await fetch(DB, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sql, params }) });
-  const json = await res.json().catch(() => null);
-  if (!res.ok || !json || typeof json !== "object" || json.error) throw new Error(json?.error || "Couldn’t reach the hub. Try again.");
-  return json;
+  const write = !/^\s*(select|with)\b/i.test(sql);
+  if (write) writeVersion++;
+  try {
+    const res = await fetch(DB, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sql, params }) });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || !json || typeof json !== "object" || json.error) throw new Error(json?.error || "Couldn’t reach the hub. Try again.");
+    return json;
+  } finally {
+    if (write) writeVersion++;
+  }
 }
 
 async function loadMembers() {
@@ -147,8 +168,13 @@ async function loadMembers() {
       { id: "demo-3", name: "Pat", role: "adult" },
     ];
   } else {
-    try { const res = await fetch(`${CONTEXT}?keys=family.members`); members = ((await res.json())["family.members"]) ?? []; }
-    catch { members = []; }
+    // A failed read throws: it is a failed load, never a household of nobody.
+    // A 200 that names the key in `$errors` is the hub saying it could not read it.
+    const res = await fetch(`${CONTEXT}?keys=family.members`);
+    const data = await res.json().catch(() => null);
+    if (!res.ok || data === null || typeof data !== "object" || Array.isArray(data)) throw new Error("Couldn’t reach the hub. Try again.");
+    if (Array.isArray(data.$errors) && data.$errors.includes("family.members")) throw new Error("Couldn’t reach the hub. Try again.");
+    members = data["family.members"] ?? [];
   }
   memberMap = new Map(members.map(m => [m.id, m]));
   me = HUB_MEMBER ?? members[0] ?? { id: "guest", name: "Guest", role: "adult" };
@@ -162,6 +188,13 @@ function seedDemo() {
   profiles = [
     profile("p1", "Mom", { born_on: "1944-03-09", residence: "At home on Alder Street", primary_doctor: "Dr. Reyes, 555-0142", diagnoses: "High blood pressure\nArthritis in both knees", mobility: "Uses a cane outdoors. Needs a hand on the stairs.", baseline: "Up by seven, reads the paper, walks to the corner after lunch." }),
     profile("p2", "Dad", { born_on: "1941-11-22", residence: "At home on Alder Street", cognition: "Forgets recent conversations. Knows everyone." }),
+  ];
+  const ago = days => new Date(Date.now() - days * 86_400_000).toISOString();
+  const reading = (id, kind, value, value2, unit, days) => ({ id, profile_id: "p1", kind, value, value2, unit, note: "", measured_at: ago(days), recorded_by: "demo-1", created_at: ago(days) });
+  vitals = [
+    reading("x1", "bp", "128", "82", "mmHg", 0), reading("x2", "bp", "134", "86", "mmHg", 3), reading("x3", "bp", "141", "88", "mmHg", 7), reading("x4", "bp", "138", "84", "mmHg", 12),
+    reading("x5", "weight", "148", "", "lb", 1), reading("x6", "weight", "149.5", "", "lb", 8), reading("x7", "weight", "151", "", "lb", 15),
+    reading("x8", "appetite", "4", "", "of 5", 0),
   ];
   visits = [
     { id: "v1", profile_id: "", date: today(), time: "10:00", member_id: "demo-1", member_name: "Dana", note: "Morning check-in, breakfast", created_by: "demo-1", created_at: nowIso() },
@@ -213,22 +246,27 @@ async function loadData() {
 // rest and can only be compared client-side, so a windowed search would quietly
 // answer "no results" about records that exist. The promise is the guard, so
 // repeated keystrokes cannot start a second read.
+// Log entries carry free text, so a page is kept well under the hub's 2 MiB
+// answer limit as well as its row limit.
+const HISTORY_PAGE = 500;
+const HISTORY_TABLES = ["visits", "tasks", "appointments", "observations"];
+const historyPage = table => after => db(`SELECT * FROM app_elder_care__${table} WHERE id > ? ORDER BY id LIMIT ${HISTORY_PAGE}`, [after]).then(r => r.rows);
 let historyLoaded = false;
 let historyError = false;
 let historyPromise = null;
 function loadFullHistory() {
   if (!DB || historyLoaded) return Promise.resolve();
-  historyPromise ??= Promise.all([
-    db("SELECT * FROM app_elder_care__visits ORDER BY date ASC, time ASC"),
-    db("SELECT * FROM app_elder_care__tasks ORDER BY (status = 'done'), (due_date = ''), due_date ASC, created_at DESC"),
-    db("SELECT * FROM app_elder_care__appointments ORDER BY date ASC, time ASC"),
-    db("SELECT * FROM app_elder_care__observations ORDER BY observed_at DESC"),
-  ])
+  // Editing stays available while this is out, so a read that a save, a tick
+  // or a delete overlapped is not used: replacing the lists with it could take
+  // that change back off the screen. It is read again once the write is done.
+  // Each table is read whole, but a page at a time: one request for all of it
+  // fails for good once the table passes the hub's row or size ceiling.
+  historyPromise ??= readWhenQuiet(() => Promise.all(HISTORY_TABLES.map(table => readAllPages(historyPage(table), HISTORY_PAGE))), () => writeVersion)
     .then(([v, t, a, o]) => {
-      // Replace rather than append: these statements are supersets of the
-      // windowed ones and arrive in the same order, so there is no merge to get
-      // wrong and no chance of a duplicate.
-      visits = v.rows; tasks = t.rows; appointments = a.rows; observations = o.rows;
+      // Replace rather than append: every row of each table is here, so there
+      // is no merge to get wrong and no chance of a duplicate. Sorted here, into
+      // the order the launch reads use, because the pages come in id order.
+      visits = sortByDateTime(v); tasks = sortTasks(t); appointments = sortByDateTime(a); observations = sortObservations(o);
       historyLoaded = true;
       historyError = false;
     })
@@ -405,7 +443,11 @@ async function toggleTask(id) {
   const completed_at = status === "done" ? nowIso() : "";
   try {
     if (DB) await db(`UPDATE app_elder_care__tasks SET status = ?, completed_at = ? WHERE id = ?`, [status, completed_at, id]);
-    t.status = status; t.completed_at = completed_at; render();
+    // Looked up again: a history load can replace the list while the write is
+    // out, and the row found before it is then no longer the one on screen.
+    const now = tasks.find(x => x.id === id);
+    if (now) { now.status = status; now.completed_at = completed_at; }
+    render();
   } catch (e) { showError(e.message); }
 }
 async function deleteTask(id) {
@@ -461,7 +503,10 @@ async function claimAppt(id) {
   const a = appointments.find(x => x.id === id); if (!a || !me) return;
   try {
     if (DB) await db(`UPDATE app_elder_care__appointments SET accompanied_by_id = ?, accompanied_by_name = ? WHERE id = ?`, [me.id, me.name, id]);
-    a.accompanied_by_id = me.id; a.accompanied_by_name = me.name; render();
+    // Looked up again, for the same reason as in toggleTask.
+    const now = appointments.find(x => x.id === id);
+    if (now) { now.accompanied_by_id = me.id; now.accompanied_by_name = me.name; }
+    render();
   } catch (e) { showError(e.message); }
 }
 async function deleteAppt(id) {
@@ -499,10 +544,11 @@ async function submitObs(form) {
   const profileId = aboutChoice(form, "o-for");
   if (form["o-for"] && !profileId) { form["o-for"].focus(); return; }
   const btn = modalEl.querySelector(".btn[type=submit]"); btn.disabled = true; btn.textContent = "Posting…";
-  const row = { id: uid("o"), profile_id: profileId, member_id: me.id, member_name: me.name, category: form["o-cat"].value, note, observed_at: nowIso(), created_at: nowIso() };
+  // observed_date is the household's own calendar day, for the record's dates.
+  const row = { id: uid("o"), profile_id: profileId, member_id: me.id, member_name: me.name, category: form["o-cat"].value, note, observed_at: nowIso(), observed_date: today(), created_at: nowIso() };
   try {
-    if (DB) await db(`INSERT INTO app_elder_care__observations (id, profile_id, member_id, member_name, category, note, observed_at, created_at) VALUES (?,?,?,?,?,?,?,?)`,
-      [row.id, row.profile_id, row.member_id, row.member_name, row.category, row.note, row.observed_at, row.created_at]);
+    if (DB) await db(`INSERT INTO app_elder_care__observations (id, profile_id, member_id, member_name, category, note, observed_at, observed_date, created_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+      [row.id, row.profile_id, row.member_id, row.member_name, row.category, row.note, row.observed_at, row.observed_date, row.created_at]);
     observations = [row, ...observations];
     closeModal(); render();
   } catch (e) { btn.disabled = false; btn.textContent = "Post"; showError(e.message); }
@@ -619,6 +665,304 @@ function renderLog() {
     ${earlierHistoryHtml()}`;
 }
 
+/* ── vitals ── */
+// Read when the Vitals tab is first opened, not at launch: no other screen
+// needs a reading, and these tables grow faster than any other in the app.
+//
+// Two tables hold readings (see migrations/005): what adults recorded, and what
+// a person logged for themselves. Both are read together and shown as one list.
+let vitals = [];
+let openVitalKind = "";
+const VITALS_PAGE = 2000;
+const VITAL_SOURCES = [
+  { table: "app_elder_care__vitals", own: false },
+  { table: "app_elder_care__own_vitals", own: true },
+];
+// Self-logged readings are read only for members who have a profile. Any
+// member may write that table, and only its writer can remove a row, so a
+// read of the whole table would let one member's rows crowd out or break the
+// tab for everybody with nothing an adult could do about it.
+function linkedMemberIds() { return [...new Set(profiles.map(p => p.member_id).filter(Boolean))]; }
+function vitalsScope(source) {
+  if (!source.own) return { where: "", params: [] };
+  const ids = linkedMemberIds();
+  return { where: `member_id IN (${ids.map(() => "?").join(",")}) AND `, params: ids };
+}
+// Earlier readings come a page at a time. The hub refuses any answer over 5,000
+// rows, and a person with several readings a day passes that within two years:
+// one unbounded read would then fail on every tap, for good. The page is
+// walked by (measured_at, id), so readings that share a time cannot stall it.
+// The first read is a page too. Bounded only by the window, a person with many
+// readings a day could put it over the hub's 5,000-row ceiling, and then the tab
+// would offer nothing but a retry that fails the same way. A full first page
+// simply leaves the rest of the window to "Show earlier readings", which
+// carries on from the last row this returned.
+const vitalsRecentSql = (source, scope) => `SELECT * FROM ${source.table} WHERE ${scope.where}measured_at >= date(?, '-120 days') ORDER BY measured_at DESC, id DESC LIMIT ${VITALS_PAGE}`;
+const vitalsOlderSql = (source, scope) => `SELECT * FROM ${source.table} WHERE ${scope.where}measured_at <= ? AND (measured_at < ? OR id < ?) ORDER BY measured_at DESC, id DESC LIMIT ${VITALS_PAGE}`;
+const vitalsLoad = { recent: false, error: false, sources: VITAL_SOURCES.map(source => ({ ...source, cursor: VITALS_CURSOR_START, done: false })) };
+// Owns the read in flight. Its reset drops that read's result: see logic.js.
+const vitalsRead = createResettableLoad();
+function resetVitalsLoad() {
+  // With no database there is nothing to read them back from: the demo's
+  // readings, and any logged this session, are the only copy.
+  if (!DB) return;
+  vitalsRead.reset();
+  vitals = [];
+  vitalsLoad.recent = false; vitalsLoad.error = false;
+  vitalsLoad.sources = VITAL_SOURCES.map(source => ({ ...source, cursor: VITALS_CURSOR_START, done: false }));
+}
+resetVitalsLoad();
+function vitalsAllLoaded() { return vitalsLoad.sources.every(source => source.done); }
+const fromSource = (source, rows) => (source.own ? rows.map(ownReading) : rows);
+const NO_ROWS = Promise.resolve({ rows: [] });
+// While a read is in flight the tab draws no controls (see renderVitals), so
+// nothing can be logged or removed that the arriving rows would then undo.
+// A read is applied only when every table answered, so a failure leaves the
+// lists and both cursors exactly as they were for the retry.
+function loadVitals(older) {
+  if (!DB) return Promise.resolve();
+  if (vitalsRead.busy) return vitalsRead.promise;
+  if (vitalsAllLoaded() || (!older && vitalsLoad.recent)) return Promise.resolve();
+  vitalsLoad.error = false;
+  const pending = older ? vitalsLoad.sources.filter(source => !source.done) : vitalsLoad.sources;
+  const read = () => Promise.all(pending.map(source => {
+    const scope = vitalsScope(source);
+    // Nobody linked means no self-logged reading can count: nothing to ask for.
+    if (source.own && !scope.params.length) return NO_ROWS;
+    return older
+      ? db(vitalsOlderSql(source, scope), [...scope.params, source.cursor.at, source.cursor.at, source.cursor.id])
+      : db(vitalsRecentSql(source, scope), [...scope.params, today()]);
+  }));
+  return vitalsRead.start(read, answers => {
+    if (!older) vitals = [];
+    answers.forEach((answer, i) => {
+      const source = pending[i];
+      const rows = fromSource(source, answer.rows);
+      if (older) {
+        const merged = mergeOlderVitals(vitals, rows, VITALS_PAGE);
+        vitals = merged.vitals; source.done = merged.done;
+      } else {
+        vitals = [...vitals, ...rows];
+      }
+      source.cursor = nextVitalsCursor(older ? source.cursor : VITALS_CURSOR_START, rows);
+    });
+    vitalsLoad.recent = true;
+  }, () => { vitalsLoad.error = true; });
+}
+
+// A read can land after the person has moved to another tab, where a redraw
+// would take the focus out of a search box they are typing in.
+function renderIfOnVitals() { if (tab === "vitals") render(); }
+
+function vitalFieldsHtml(kind, profile) {
+  const mine = readingsByKind(vitalsFor(vitals, profile)).get(kind.id) ?? [];
+  const units = vitalUnits(kind);
+  const unit = defaultUnit(kind, mine);
+  const number = (id, label) => `<div class="field"><label for="${id}">${label}</label><input id="${id}" inputmode="decimal" autocomplete="off" ${id === "vt-value" ? "data-autofocus" : ""} required></div>`;
+  const unitField = units.length > 1
+    ? `<div class="field"><label for="vt-unit">Unit</label><select id="vt-unit">${units.map(u => `<option value="${esc(u)}" ${u === unit ? "selected" : ""}>${esc(u)}</option>`).join("")}</select></div>`
+    : `<input type="hidden" id="vt-unit" value="${esc(unit)}">`;
+  return `
+    <div class="two">
+      ${kind.range2 ? number("vt-value", kind.labels[0]) + number("vt-value2", kind.labels[1]) : number("vt-value", `${kind.label}${units.length > 1 ? "" : ` (${esc(unit)})`}`) + (units.length > 1 ? unitField : "")}
+    </div>
+    ${units.length > 1 ? "" : unitField}
+    ${kind.hint ? `<span class="hint">${esc(kind.hint)}</span>` : ""}`;
+}
+function vitalModal() {
+  const who = inView();
+  if (!who || !canLogVitals(me, who, isAdult(me))) return;
+  const kind = vitalKind(openVitalKind) ?? VITAL_KINDS[0];
+  const opened = new Date();
+  openModal(`
+    <h2>Log a reading for ${esc(who.name)}</h2>
+    <form class="form" id="vital-form" data-profile-id="${esc(who.id)}" data-opened-at="${opened.toISOString()}" data-opened-when="${toLocalInput(opened)}">
+      <div class="error" id="vital-error" hidden></div>
+      <div class="field"><label for="vt-kind">What</label><select id="vt-kind">${VITAL_KINDS.map(k => `<option value="${k.id}" ${k.id === kind.id ? "selected" : ""}>${k.label}</option>`).join("")}</select></div>
+      <div id="vt-fields" class="form">${vitalFieldsHtml(kind, who)}</div>
+      <div class="field"><label for="vt-when">When</label><input id="vt-when" type="datetime-local" value="${toLocalInput(opened)}" required></div>
+      <div class="field"><label for="vt-note">Note</label><input id="vt-note" placeholder="After breakfast, left arm, felt dizzy"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-close>Cancel</button>
+        <button type="submit" class="btn">Save</button>
+      </div>
+    </form>`);
+}
+async function submitVital(form) {
+  const box = form.querySelector("#vital-error");
+  const fail = msg => { box.textContent = msg; box.hidden = false; box.scrollIntoView({ block: "nearest" }); };
+  // The profile the form was opened for, not whoever is in view now.
+  const who = profiles.find(x => x.id === form.dataset.profileId);
+  if (!who || !canLogVitals(me, who, isAdult(me))) { closeModal(); return; }
+  const kindId = form["vt-kind"].value, unit = form["vt-unit"].value;
+  const parsed = parseReading(kindId, unit, form["vt-value"].value, form["vt-value2"]?.value ?? "");
+  if (!parsed.ok) return fail(parsed.error);
+  // Left on its default, "When" means the moment the form opened, taken from
+  // the clock and not from the text in the field. The text has no seconds and no
+  // offset: in the hour a clock goes back it names two moments an hour apart,
+  // and two readings in one minute would otherwise share a time exactly.
+  const typedWhen = form["vt-when"].value;
+  const measured_at = typedWhen === form.dataset.openedWhen ? form.dataset.openedAt : localInputToIso(typedWhen, Date.now());
+  if (!measured_at) return fail("Choose a time that is not in the future.");
+  const btn = modalEl.querySelector(".btn[type=submit]"); btn.disabled = true; btn.textContent = "Saving…";
+  // The HOUSEHOLD's calendar day that moment fell on, like every other stored
+  // date in the app: it is what the record's From and To are compared with. Not
+  // the day in the field, which is this device's, and would file a reading and a
+  // log entry made in the same minute under different days for a member away
+  // from home. The device's day only when the SDK has no answer.
+  const reading = { id: uid("x"), kind: kindId, value: parsed.value, value2: parsed.value2, unit, note: form["vt-note"].value.trim(), measured_at, measured_date: today(new Date(measured_at)) ?? typedWhen.slice(0, 10), created_at: nowIso() };
+  // An adult records into `vitals`, which the hub lets only adults write. Anyone
+  // else can only be logging for themselves, and writes `own_vitals`, where the
+  // hub stamps the row with the caller whatever this page sends.
+  const row = isAdult(me)
+    ? { ...reading, profile_id: who.id, recorded_by: me.id }
+    : ownReading({ ...reading, member_id: me.id });
+  try {
+    if (DB && row.own) await db(`INSERT INTO app_elder_care__own_vitals (id, member_id, kind, value, value2, unit, note, measured_at, measured_date, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [row.id, row.member_id, row.kind, row.value, row.value2, row.unit, row.note, row.measured_at, row.measured_date, row.created_at]);
+    else if (DB) await db(`INSERT INTO app_elder_care__vitals (id, profile_id, kind, value, value2, unit, note, measured_at, measured_date, recorded_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [row.id, row.profile_id, row.kind, row.value, row.value2, row.unit, row.note, row.measured_at, row.measured_date, row.recorded_by, row.created_at]);
+    vitals = [row, ...vitals];
+    openVitalKind = row.kind;
+    closeModal(); render();
+  } catch (e) { btn.disabled = false; btn.textContent = "Save"; fail(e.message); }
+}
+// Addressed by table as well as id: the two tables keep separate ids, and a
+// member can choose the id of a row they write.
+async function deleteVital(id, own) {
+  const v = vitals.find(x => x.id === id && !!x.own === own); if (!v) return;
+  if (!canDeleteReading(me, v, isAdult(me))) return;
+  if (!(await hubConfirm({ message: "Delete this reading?", description: `${fmtReading(v)}, ${fmtWhen(v.measured_at)}`, destructive: true, confirmLabel: "Delete" }))) return;
+  try {
+    if (DB) {
+      const res = await db(`DELETE FROM ${v.own ? "app_elder_care__own_vitals" : "app_elder_care__vitals"} WHERE id = ?`, [id]);
+      // The hub answers a delete it narrowed to nothing with success and zero
+      // rows. Saying "deleted" then would be untrue until the next reload.
+      if (res.changed === 0) throw new Error("That reading could not be deleted. It may already be gone, or it is not yours to remove.");
+    }
+    vitals = vitals.filter(x => x !== v); render();
+  } catch (e) { showError(e.message); }
+}
+
+function sparkHtml(readings) {
+  const spark = sparkline(trendSeries(readings, Date.now() - 90 * 86_400_000));
+  if (!spark) return "";
+  return `<svg class="spark" viewBox="0 0 ${spark.width} ${spark.height}" role="img" aria-label="Trend over the last 90 days" data-testid="vital-trend">
+    <polyline points="${spark.line}"></polyline>${spark.line2 ? `<polyline class="second" points="${spark.line2}"></polyline>` : ""}</svg>`;
+}
+function vitalCardHtml(kind, readings) {
+  const latest = readings[0];
+  const open = openVitalKind === kind.id;
+  const numbers = fmtReading({ ...latest, unit: "" });
+  return `
+    <div class="card stack" style="gap:8px" data-testid="vital" data-kind="${kind.id}">
+      <div class="row-card">
+        <div>
+          <div class="meta" style="margin-top:0">${kind.label}</div>
+          <div class="vital-now" data-testid="vital-latest">${esc(numbers)} <span class="unit">${esc(latest.unit)}</span></div>
+          <div class="meta">${esc(fmtWhen(latest.measured_at))} · ${readings.length} ${readings.length === 1 ? "reading" : "readings"}</div>
+        </div>
+        ${sparkHtml(readings)}
+      </div>
+      <div class="actions"><button class="btn btn-ghost btn-sm" data-vital-kind="${kind.id}" aria-expanded="${open}">${open ? "Hide readings" : "Show readings"}</button></div>
+      ${open ? `<div>${readings.map(r => `
+        <div class="reading-row" data-testid="reading" data-reading-id="${esc(r.id)}" data-own="${r.own ? "1" : ""}">
+          <div>
+            <strong>${esc(fmtReading(r))}</strong>
+            <div class="meta">${esc(fmtWhen(r.measured_at))} · ${esc(memberName(r.recorded_by))}${r.note ? ` — ${esc(r.note)}` : ""}</div>
+          </div>
+          ${canDeleteReading(me, r, isAdult(me)) ? `<button class="btn btn-ghost btn-sm" data-del-vital="${esc(r.id)}" data-own="${r.own ? "1" : ""}" aria-label="Delete reading">${glyph("close")}</button>` : ""}
+        </div>`).join("")}</div>` : ""}
+    </div>`;
+}
+
+function renderVitals() {
+  const active = activeProfiles(profiles);
+  const who = inView();
+  const head = extra => `<div class="section-head"><h2>Vitals</h2>${extra}</div>`;
+  if (!active.length) {
+    return `${head("")}<div class="card empty"><div>${chickadee("nest", { size: 72 })}</div>A reading belongs to a person.${canEdit() ? ` <div style="margin-top:10px"><button class="btn btn-sm" data-tab="profile">Add a profile first</button></div>` : " No profile has been added yet."}</div>`;
+  }
+  if (!who) {
+    return `${head("")}<div class="card stack" data-testid="vitals-choose"><div>Whose readings?</div><div class="actions">${active.map(r => `<button class="btn btn-ghost btn-sm" data-profile="${esc(r.id)}">${esc(r.name)}</button>`).join("")}</div></div>`;
+  }
+  if (DB && (vitalsRead.busy || !vitalsLoad.recent)) {
+    return vitalsLoad.error
+      ? `${head("")}<div class="card empty">The readings could not be loaded. <button class="btn btn-ghost btn-sm" data-load-vitals="recent">Try again</button></div>`
+      : `${head("")}<div class="card loading">Loading…</div>`;
+  }
+  const canLog = canLogVitals(me, who, isAdult(me));
+  const groups = readingsByKind(vitalsFor(vitals, who));
+  const cards = VITAL_KINDS.filter(k => groups.has(k.id)).map(k => vitalCardHtml(k, groups.get(k.id)));
+  return `
+    ${head(canLog ? `<button class="btn btn-sm" data-add="vital">Log a reading</button>` : "")}
+    <div class="stack" data-testid="vitals" data-profile-id="${esc(who.id)}">
+      ${cards.length ? cards.join("") : `<div class="card empty"><div>${chickadee("nest", { size: 72 })}</div>${DB && !vitalsAllLoaded() ? `No recent readings for ${esc(who.name)}.` : `No readings for ${esc(who.name)} yet.`}</div>`}
+    </div>
+    ${DB && !vitalsAllLoaded() ? (vitalsLoad.error
+      ? `<div class="card empty" style="margin-top:12px">Earlier readings could not be loaded. <button class="btn btn-ghost btn-sm" data-load-vitals="older">Try again</button></div>`
+      : `<button class="btn btn-ghost btn-sm" data-load-vitals="older" style="width:100%;margin-top:12px">Show earlier readings</button>`) : ""}`;
+}
+
+/* ── the record for a doctor visit ── */
+// The hub renders these documents from the manifest's `reports`, as whoever
+// asks, through the same row policies as the page's own reads. The full record
+// binds every report for one date range into a single print-styled document.
+// They open in a new tab: the document carries its own page, and a CSV arrives
+// as a download.
+const records = { views: null, full: null, loading: false, failed: false };
+let recordFrom = "", recordTo = "";
+// Until someone picks a date the range is the default, and the default ends
+// "today", so it is worked out each time it is used and not kept from whenever
+// the tab was first drawn.
+let recordRangeEdited = false;
+function loadRecords() {
+  if (!REPORTS_URL || records.views || records.loading) return;
+  records.loading = true; records.failed = false;
+  fetch(REPORTS_URL, { headers: { Accept: "application/json" } })
+    .then(res => { if (!res.ok) throw new Error(`reports ${res.status}`); return res.json(); })
+    .then(body => { records.views = Array.isArray(body?.views) ? body.views : []; records.full = body?.full_record ?? null; })
+    // A list that failed to load is not an empty list.
+    .catch(() => { records.failed = true; })
+    .finally(() => { records.loading = false; if (tab === "profile") render(); });
+}
+function openRecord(id, format) {
+  if (!recordRangeEdited) ({ from: recordFrom, to: recordTo } = defaultRecordRange(today()));
+  const problem = recordRangeError(recordFrom, recordTo);
+  if (problem) { showError(problem); return; }
+  // A complaint about the dates must not outlive the dates being put right.
+  if (error) { error = ""; render(); }
+  window.open(recordUrl(REPORTS_URL, id, format, recordFrom, recordTo, window.location.href), "_blank", "noopener");
+}
+function recordCardHtml() {
+  // Adults only, like every other control here, and only once there is a
+  // person to make a record of. Outside the hub there is nothing to render it.
+  if (!REPORTS_URL || !canEdit() || !profiles.length) return "";
+  const head = `<div class="section-head" style="margin-top:8px"><h3>For a doctor visit</h3></div>`;
+  if (!records.views) {
+    if (records.failed) return `${head}<div class="card empty" data-testid="record-card">The record could not be loaded. <button class="btn btn-ghost btn-sm" data-records-retry>Try again</button></div>`;
+    loadRecords();
+    return `${head}<div class="card loading" data-testid="record-card">Loading…</div>`;
+  }
+  if (!recordRangeEdited) ({ from: recordFrom, to: recordTo } = defaultRecordRange(today()));
+  const button = (id, format, label, primary) => `<button class="btn btn-sm ${primary ? "" : "btn-ghost"}" data-report="${esc(id)}" data-format="${format}">${label}</button>`;
+  return `${head}
+    <div class="card stack" data-testid="record-card">
+      <div>One document with the care profile, the readings, the observation log and the appointments for the dates below. Open it, then print it or save it as a PDF.</div>
+      <div class="two">
+        <div class="field"><label for="rec-from">From</label><input id="rec-from" type="date" value="${esc(recordFrom)}"></div>
+        <div class="field"><label for="rec-to">To</label><input id="rec-to" type="date" value="${esc(recordTo)}"></div>
+      </div>
+      <span class="hint">Leave From empty to start at the beginning. Each row shows the day it is listed under, and its time in UTC.</span>
+      ${records.full ? `<div class="actions">${button(records.full.id, "html", "Open the record", true)}</div>` : ""}
+      ${records.views.length ? `<div>${records.views.map(v => `
+        <div class="reading-row" data-testid="record-view" data-record="${esc(v.id)}">
+          <div><strong>${esc(v.title)}</strong>${v.description ? `<div class="meta">${esc(v.description)}</div>` : ""}</div>
+          <div class="actions" style="flex-wrap:nowrap">${button(v.id, "html", "Open")}${button(v.id, "csv", "CSV")}</div>
+        </div>`).join("")}</div>` : ""}
+    </div>`;
+}
+
 /* ── profiles ── */
 function profileModal(id) {
   const r = id ? profiles.find(x => x.id === id) : null;
@@ -674,10 +1018,25 @@ async function submitProfile(form) {
       // of the profile cannot put back the fields someone else just edited.
       const changed = profileChanges(profileFormOpened ?? before, after);
       const cols = Object.keys(changed);
+      // Readings a person logged for themselves are found through this link.
+      // Changing it does not delete them, but it takes them off this profile,
+      // so nobody should do that without being told.
+      const wasMember = (profileFormOpened ?? before).member_id;
+      if (DB && wasMember && "member_id" in changed) {
+        const own = await db(`SELECT COUNT(*) AS n FROM app_elder_care__own_vitals WHERE member_id = ?`, [wasMember]);
+        const n = Number(own.rows?.[0]?.n ?? 0);
+        if (n > 0 && !(await hubConfirm({
+          message: "Change who this profile is linked to?",
+          description: `${memberName(wasMember)} logged ${n} ${n === 1 ? "reading" : "readings"} themselves. ${n === 1 ? "It" : "They"} will stop showing on this profile, and come back if you link ${memberName(wasMember)} again.`,
+          confirmLabel: "Change the link",
+        }))) { btn.disabled = false; btn.textContent = "Save"; return; }
+      }
       if (cols.length) {
         if (DB) await db(`UPDATE app_elder_care__profiles SET ${cols.map(c => `${c} = ?`).join(", ")}, updated_at = ? WHERE id = ?`,
           [...cols.map(c => changed[c]), now, id]);
         Object.assign(before, changed, { updated_at: now });
+        // Which self-logged readings are read depends on who is linked.
+        if ("member_id" in changed) resetVitalsLoad();
       }
     } else {
       const row = { id: uid("p"), ...after, archived_at: "", created_by: me.id, created_at: now, updated_at: now };
@@ -685,6 +1044,7 @@ async function submitProfile(form) {
         [row.id, row.name, row.member_id, ...PROFILE_FIELDS.map(f => row[f.key]), row.archived_at, row.created_by, row.created_at, row.updated_at]);
       profiles = [...profiles, row];
       selectedProfileId = row.id;
+      if (row.member_id) resetVitalsLoad();
     }
     closeModal(); render();
   } catch (e) {
@@ -793,7 +1153,8 @@ function renderProfile() {
           <strong>${esc(r.name)}</strong>
           ${canEdit() ? `<button class="btn btn-ghost btn-sm" data-restore-profile="${esc(r.id)}">Restore</button>` : ""}
         </div>`).join("")}` : ""}
-    </div>`;
+    </div>
+    ${recordCardHtml()}`;
 }
 
 // The switcher. Drawn only when there are two or more people to tell apart.
@@ -810,6 +1171,7 @@ const TABS = [
   { id: "tasks", label: "Tasks" },
   { id: "appointments", label: "Appointments" },
   { id: "log", label: "Log" },
+  { id: "vitals", label: "Vitals" },
   { id: "profile", label: "Profile" },
 ];
 
@@ -824,7 +1186,7 @@ function render() {
       <div class="load-error" data-testid="load-error" role="alert"><span>Couldn’t load the care record.</span> <button type="button" class="load-error-retry" data-testid="load-retry">Try again</button></div>`;
     return;
   }
-  const body = tab === "schedule" ? renderSchedule() : tab === "tasks" ? renderTasks() : tab === "appointments" ? renderAppointments() : tab === "profile" ? renderProfile() : renderLog();
+  const body = tab === "schedule" ? renderSchedule() : tab === "tasks" ? renderTasks() : tab === "appointments" ? renderAppointments() : tab === "profile" ? renderProfile() : tab === "vitals" ? renderVitals() : renderLog();
   const active = activeProfiles(profiles);
   root.innerHTML = `
     <div class="topbar">
@@ -834,7 +1196,7 @@ function render() {
     ${profileChipsHtml()}
     <div class="tabs">${TABS.map(t => `<button class="tab ${tab === t.id ? "active" : ""}" data-tab="${t.id}">${t.label}</button>`).join("")}</div>
     ${body}
-    ${tab === "log" || tab === "profile" ? "" : earlierHistoryHtml()}`;
+    ${tab === "log" || tab === "profile" || tab === "vitals" ? "" : earlierHistoryHtml()}`;
 }
 
 // Re-render only the list on each keystroke so the search box keeps focus.
@@ -853,7 +1215,19 @@ document.addEventListener("click", e => {
   const t = e.target.closest("button, [data-tab]");
   if (!t) return;
   if (t.dataset.testid === "load-retry") { init(); return; }
-  if (t.dataset.tab) { tab = t.dataset.tab; error = ""; render(); return; }
+  if (t.dataset.tab) {
+    tab = t.dataset.tab; error = "";
+    // Started before the draw, so a tab reopened after a failed read shows
+    // the retry in progress and not the old failure.
+    if (tab === "vitals") loadVitals(false).then(renderIfOnVitals);
+    render();
+    return;
+  }
+  if (t.dataset.loadVitals) { loadVitals(t.dataset.loadVitals === "older").then(renderIfOnVitals); render(); return; }
+  if (t.dataset.vitalKind) { openVitalKind = openVitalKind === t.dataset.vitalKind ? "" : t.dataset.vitalKind; render(); return; }
+  if (t.dataset.report) return openRecord(t.dataset.report, t.dataset.format);
+  if (t.dataset.recordsRetry !== undefined) { records.failed = false; render(); return; }
+  if (t.dataset.delVital) return deleteVital(t.dataset.delVital, t.dataset.own === "1");
   if (t.dataset.profile !== undefined) { selectedProfileId = t.dataset.profile; error = ""; render(); return; }
   if (t.dataset.loadHistory !== undefined) {
     t.disabled = true; t.textContent = "Loading…";
@@ -867,6 +1241,7 @@ document.addEventListener("click", e => {
   if (add === "appt") return apptModal();
   if (add === "obs") return obsModal();
   if (add === "profile") return profileModal("");
+  if (add === "vital") return vitalModal();
   if (t.dataset.editProfile) return profileModal(t.dataset.editProfile);
   if (t.dataset.archiveProfile) return setProfileArchived(t.dataset.archiveProfile, true);
   if (t.dataset.restoreProfile) return setProfileArchived(t.dataset.restoreProfile, false);
@@ -880,6 +1255,21 @@ document.addEventListener("click", e => {
 });
 
 document.addEventListener("change", e => {
+  if (e.target.id === "rec-from" || e.target.id === "rec-to") {
+    if (e.target.id === "rec-from") recordFrom = e.target.value; else recordTo = e.target.value;
+    recordRangeEdited = true;
+    return;
+  }
+  // Each kind of reading has its own fields: one number or two, one unit or a choice.
+  if (e.target.id === "vt-kind") {
+    const form = e.target.form;
+    const profile = profiles.find(x => x.id === form.dataset.profileId);
+    if (!profile) { closeModal(); return; }
+    form.querySelector("#vt-fields").innerHTML = vitalFieldsHtml(vitalKind(e.target.value) ?? VITAL_KINDS[0], profile);
+    form.querySelector("#vital-error").hidden = true;
+    form.querySelector("#vt-value").focus();
+    return;
+  }
   const cb = e.target.closest("[data-toggle]");
   if (cb) toggleTask(cb.dataset.toggle);
 });
@@ -892,6 +1282,7 @@ document.addEventListener("submit", e => {
   else if (id === "appt-form") submitAppt(e.target);
   else if (id === "obs-form") submitObs(e.target);
   else if (id === "profile-form") submitProfile(e.target);
+  else if (id === "vital-form") submitVital(e.target);
 });
 
 async function deleteVisit(id) {

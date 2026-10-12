@@ -72,6 +72,22 @@
           "as": "parent"
         },
         {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"record-card\"] [data-report=\"full_record\"]",
+          "as": "parent"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"record-view\"]",
+          "count": 5,
+          "as": "parent"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"record-view\"][data-record=\"care_profile\"] [data-format=\"csv\"]",
+          "as": "parent"
+        },
+        {
           "action": "reload",
           "as": "parent"
         },
@@ -231,6 +247,12 @@
           "selector": "[data-add=\"profile\"]",
           "count": 0,
           "as": "kid"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"record-card\"]",
+          "count": 0,
+          "as": "kid"
         }
       ]
     },
@@ -307,6 +329,20 @@
           "action": "expectCount",
           "selector": "[data-testid=\"profile-chip\"]",
           "count": 3
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"task\"]",
+          "count": 3
+        },
+        {
+          "action": "click",
+          "selector": "[data-load-history]"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-load-history]",
+          "count": 0
         },
         {
           "action": "expectCount",
@@ -653,6 +689,664 @@
           "action": "expectCount",
           "selector": "[data-testid=\"profile-chip\"]",
           "count": 3
+        }
+      ]
+    },
+    {
+      "name": "a person who is not an adult here logs their own reading, can remove it, and is offered nothing for anyone else; an adult logs for anyone but cannot remove a reading someone logged for themselves; a mistyped blood pressure is refused; readings are still there after a reload; earlier readings load on request; unlinking a profile warns before it hides the readings that person logged",
+      "members": {
+        "sibling": "adult",
+        "gran": "child"
+      },
+      "steps": [
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_elder_care__profiles (id, name, member_id, created_by, created_at, updated_at) VALUES ('p-gran', ?, ?, ?, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+          "params": [
+            "Gran",
+            "{{gran}}",
+            "{{sibling}}"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_elder_care__profiles (id, name, member_id, created_by, created_at, updated_at) VALUES ('p-dad', ?, NULL, ?, '2026-01-02T00:00:00Z', '2026-01-02T00:00:00Z')",
+          "params": [
+            "Dad",
+            "{{sibling}}"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_elder_care__vitals (id, profile_id, kind, value, unit, measured_at, recorded_by, created_at) VALUES ('x-dad', 'p-dad', 'pulse', ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 days'), ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 days'))",
+          "params": [
+            "64",
+            "bpm",
+            "{{sibling}}"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_elder_care__vitals (id, profile_id, kind, value, unit, measured_at, recorded_by, created_at) VALUES ('x-old', 'p-gran', 'weight', ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-200 days'), ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-200 days'))",
+          "params": [
+            "150",
+            "lb",
+            "{{sibling}}"
+          ]
+        },
+        {
+          "action": "seedRaw",
+          "sql": "INSERT INTO app_elder_care__vitals (id, profile_id, kind, value, unit, measured_at, recorded_by, created_at) VALUES ('x-mid', 'p-gran', 'weight', ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-150 days'), ?, strftime('%Y-%m-%dT%H:%M:%fZ','now','-150 days'))",
+          "params": [
+            "149",
+            "lb",
+            "{{sibling}}"
+          ]
+        },
+        {
+          "action": "open",
+          "as": "gran"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-tab=\"vitals\"]",
+          "as": "gran"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"vitals\"]",
+          "as": "gran"
+        },
+        {
+          "action": "click",
+          "selector": "[data-testid=\"vitals-choose\"] [data-profile=\"p-gran\"]",
+          "as": "gran"
+        },
+        {
+          "action": "expectText",
+          "text": "No recent readings for Gran",
+          "as": "gran"
+        },
+        {
+          "action": "click",
+          "selector": "[data-add=\"vital\"]",
+          "as": "gran"
+        },
+        {
+          "action": "select",
+          "selector": "#vt-kind",
+          "value": "pulse",
+          "as": "gran"
+        },
+        {
+          "action": "fill",
+          "selector": "#vt-value",
+          "value": "72",
+          "as": "gran"
+        },
+        {
+          "action": "click",
+          "selector": "#vital-form button[type=\"submit\"]",
+          "as": "gran"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"vital\"][data-kind=\"pulse\"] [data-testid=\"vital-latest\"]",
+          "text": "72",
+          "as": "gran"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"vital\"][data-kind=\"pulse\"] [data-del-vital]",
+          "count": 1,
+          "as": "gran"
+        },
+        {
+          "action": "click",
+          "selector": "[data-add=\"vital\"]",
+          "as": "gran"
+        },
+        {
+          "action": "select",
+          "selector": "#vt-kind",
+          "value": "appetite",
+          "as": "gran"
+        },
+        {
+          "action": "fill",
+          "selector": "#vt-value",
+          "value": "4",
+          "as": "gran"
+        },
+        {
+          "action": "click",
+          "selector": "#vital-form button[type=\"submit\"]",
+          "as": "gran"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"vital\"][data-kind=\"appetite\"] [data-testid=\"vital-latest\"]",
+          "text": "4",
+          "as": "gran"
+        },
+        {
+          "action": "click",
+          "selector": "[data-testid=\"vital\"][data-kind=\"appetite\"] [data-del-vital]",
+          "as": "gran"
+        },
+        {
+          "action": "dialog",
+          "answer": "accept",
+          "text": "Delete this reading",
+          "as": "gran"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"vital\"][data-kind=\"pulse\"]",
+          "as": "gran"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"vital\"][data-kind=\"appetite\"]",
+          "count": 0,
+          "as": "gran"
+        },
+        {
+          "action": "reload",
+          "as": "gran"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-tab=\"vitals\"]",
+          "as": "gran"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"vitals\"]",
+          "as": "gran"
+        },
+        {
+          "action": "click",
+          "selector": "[data-testid=\"vitals-choose\"] [data-profile=\"p-gran\"]",
+          "as": "gran"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"vital\"][data-kind=\"pulse\"]",
+          "as": "gran"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"vital\"][data-kind=\"appetite\"]",
+          "count": 0,
+          "as": "gran"
+        },
+        {
+          "action": "click",
+          "selector": "[data-testid=\"profile-chip\"][data-profile=\"p-dad\"]",
+          "as": "gran"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"vital\"][data-kind=\"pulse\"] [data-testid=\"vital-latest\"]",
+          "text": "64",
+          "as": "gran"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-add=\"vital\"]",
+          "count": 0,
+          "as": "gran"
+        },
+        {
+          "action": "click",
+          "selector": "[data-vital-kind=\"pulse\"]",
+          "as": "gran"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"reading\"][data-reading-id=\"x-dad\"]",
+          "as": "gran"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-del-vital]",
+          "count": 0,
+          "as": "gran"
+        },
+        {
+          "action": "open",
+          "as": "sibling"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-tab=\"vitals\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"vitals\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-testid=\"vitals-choose\"] [data-profile=\"p-gran\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"vital\"][data-kind=\"pulse\"] [data-testid=\"vital-latest\"]",
+          "text": "72",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-vital-kind=\"pulse\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"vital\"][data-kind=\"pulse\"] [data-testid=\"reading\"]",
+          "count": 1,
+          "as": "sibling"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"vital\"][data-kind=\"pulse\"] [data-del-vital]",
+          "count": 0,
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-add=\"vital\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "select",
+          "selector": "#vt-kind",
+          "value": "bp",
+          "as": "sibling"
+        },
+        {
+          "action": "fill",
+          "selector": "#vt-value",
+          "value": "82",
+          "as": "sibling"
+        },
+        {
+          "action": "fill",
+          "selector": "#vt-value2",
+          "value": "128",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "#vital-form button[type=\"submit\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "selector": "#vital-error",
+          "text": "top number must be higher",
+          "as": "sibling"
+        },
+        {
+          "action": "fill",
+          "selector": "#vt-value",
+          "value": "128",
+          "as": "sibling"
+        },
+        {
+          "action": "fill",
+          "selector": "#vt-value2",
+          "value": "82",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "#vital-form button[type=\"submit\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"vital\"][data-kind=\"bp\"] [data-testid=\"vital-latest\"]",
+          "text": "128/82",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-add=\"vital\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "select",
+          "selector": "#vt-kind",
+          "value": "weight",
+          "as": "sibling"
+        },
+        {
+          "action": "select",
+          "selector": "#vt-unit",
+          "value": "kg",
+          "as": "sibling"
+        },
+        {
+          "action": "fill",
+          "selector": "#vt-value",
+          "value": "67,5",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "#vital-form button[type=\"submit\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"vital\"][data-kind=\"weight\"] [data-testid=\"vital-latest\"]",
+          "text": "67.5",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-add=\"vital\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "select",
+          "selector": "#vt-kind",
+          "value": "weight",
+          "as": "sibling"
+        },
+        {
+          "action": "expectCount",
+          "selector": "#vt-unit option[value=\"kg\"]:checked",
+          "count": 1,
+          "as": "sibling"
+        },
+        {
+          "action": "fill",
+          "selector": "#vt-value",
+          "value": "68",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "#vital-form button[type=\"submit\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"vital\"][data-kind=\"weight\"] [data-testid=\"vital-trend\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"vital\"][data-kind=\"weight\"] [data-testid=\"reading\"]",
+          "count": 2,
+          "as": "sibling"
+        },
+        {
+          "action": "reload",
+          "as": "sibling"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-tab=\"vitals\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"vitals\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-testid=\"vitals-choose\"] [data-profile=\"p-gran\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"vital\"][data-kind=\"bp\"] [data-testid=\"vital-latest\"]",
+          "text": "128/82",
+          "as": "sibling"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"vital\"]",
+          "count": 3,
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-testid=\"profile-chip\"][data-profile=\"p-dad\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"vital\"][data-kind=\"pulse\"] [data-testid=\"vital-latest\"]",
+          "text": "64",
+          "as": "sibling"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"vital\"]",
+          "count": 1,
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-vital-kind=\"pulse\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-del-vital=\"x-dad\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "dialog",
+          "answer": "accept",
+          "text": "Delete this reading",
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "text": "No recent readings for Dad",
+          "as": "sibling"
+        },
+        {
+          "action": "reload",
+          "as": "sibling"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-tab=\"vitals\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"vitals\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-testid=\"vitals-choose\"] [data-profile=\"p-dad\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "text": "No recent readings for Dad",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-testid=\"profile-chip\"][data-profile=\"p-gran\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"vital\"][data-kind=\"weight\"]",
+          "text": "2 readings",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-add=\"vital\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "select",
+          "selector": "#vt-kind",
+          "value": "weight",
+          "as": "sibling"
+        },
+        {
+          "action": "select",
+          "selector": "#vt-unit",
+          "value": "lb",
+          "as": "sibling"
+        },
+        {
+          "action": "fill",
+          "selector": "#vt-value",
+          "value": "152",
+          "as": "sibling"
+        },
+        {
+          "action": "fill",
+          "selector": "#vt-when",
+          "value": "2020-01-15T09:00",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "#vital-form button[type=\"submit\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"vital\"][data-kind=\"weight\"]",
+          "text": "3 readings",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-load-vitals=\"older\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"vital\"][data-kind=\"weight\"]",
+          "text": "5 readings",
+          "as": "sibling"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-load-vitals]",
+          "count": 0,
+          "as": "sibling"
+        },
+        {
+          "action": "expectText",
+          "selector": "[data-testid=\"reading\"][data-reading-id=\"x-old\"]",
+          "text": "150 lb",
+          "as": "sibling"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"reading\"][data-reading-id=\"x-mid\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"profile\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-edit-profile=\"p-gran\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "select",
+          "selector": "#pr-member",
+          "value": "",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "#profile-form button[type=\"submit\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "dialog",
+          "answer": "dismiss",
+          "text": "logged 1 reading themselves",
+          "as": "sibling"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "#profile-form",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "#profile-form [data-close]",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"vitals\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"vital\"][data-kind=\"pulse\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"profile\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-edit-profile=\"p-gran\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "select",
+          "selector": "#pr-member",
+          "value": "",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "#profile-form button[type=\"submit\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "dialog",
+          "answer": "accept",
+          "text": "logged 1 reading themselves",
+          "as": "sibling"
+        },
+        {
+          "action": "click",
+          "selector": "[data-tab=\"vitals\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectVisible",
+          "selector": "[data-testid=\"vital\"][data-kind=\"weight\"]",
+          "as": "sibling"
+        },
+        {
+          "action": "expectCount",
+          "selector": "[data-testid=\"vital\"][data-kind=\"pulse\"]",
+          "count": 0,
+          "as": "sibling"
         }
       ]
     }

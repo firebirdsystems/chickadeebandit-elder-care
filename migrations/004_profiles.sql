@@ -5,8 +5,9 @@
 -- `member_id` links the profile to that person's own seat in the hub when they
 -- have one, and stays NULL when they do not: a parent who will never open the
 -- app still needs a profile. NULL rather than this app's usual '' because the
--- unique index below has to ignore the unlinked rows, and because the hub's
--- member-removal cleanup clears the column with SET NULL.
+-- unique index below has to ignore the unlinked rows. The link is kept when that
+-- member leaves the hub: the readings they logged for themselves are found by
+-- it (see 005), and clearing it would hide them.
 --
 -- Everything descriptive is free text and encrypted at rest, which the hub
 -- decides by column NAME: a `_date`, `_at`, `_id`, `_by` or `_time` suffix

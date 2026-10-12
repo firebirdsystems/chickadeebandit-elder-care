@@ -16,7 +16,7 @@
     "observations": {"sql": "SELECT * FROM app_elder_care__observations WHERE observed_at >= date(?, '-120 days') ORDER BY observed_at DESC", "params": [":today"]},
     "profiles": {"sql": "SELECT * FROM app_elder_care__profiles ORDER BY created_at ASC"}
   },
-  "db_plaintext_columns": ["category", "status", "date", "time"],
+  "db_plaintext_columns": ["category", "status", "date", "time", "kind"],
   "contexts": ["household", "shared_space"],
   "data_access": {
     "reads": ["family.members"],
@@ -31,7 +31,19 @@
     "tasks": { "kind": "adult_writable" },
     "appointments": { "kind": "adult_writable" },
     "observations": { "kind": "adult_writable" },
-    "profiles": { "kind": "adult_writable" }
+    "profiles": { "kind": "adult_writable" },
+    "vitals": { "kind": "adult_writable" },
+    "own_vitals": {
+      "kind": "owner_or_visibility",
+      "member_column": "member_id",
+      "visibility_column": "visibility",
+      "everyone_values": ["everyone"],
+      "write_owner_only": true,
+      "column_write_acls": {
+        "visibility": { "writable_by": [] },
+        "member_id": { "writable_by": [], "actions": ["update"] }
+      }
+    }
   },
   "member_references": {
     "visits": [
@@ -71,13 +83,21 @@
     "profiles": [
       {
         "column": "member_id",
-        "on_removed": "null"
+        "on_removed": "keep"
       },
       {
         "column": "created_by",
         "on_removed": "keep"
       }
-    ]
+    ],
+    "vitals": {
+      "column": "recorded_by",
+      "on_removed": "keep"
+    },
+    "own_vitals": {
+      "column": "member_id",
+      "on_removed": "keep"
+    }
   },
   "automation_actions": {
     "add_task": {
@@ -134,6 +154,211 @@
     "elder_care.task_created": { "require_role": "adult" },
     "elder_care.appointment_added": { "require_role": "adult" },
     "elder_care.appointment_cancelled": { "require_role": "adult" }
+  },
+  "reports": {
+    "views": [
+      {
+        "id": "care_profile",
+        "title": "Care profile",
+        "description": "What everyone helping should know about each person: where they live, their doctor and pharmacy, conditions, allergies, diet, mobility and what a normal day looks like.",
+        "source": {
+          "kind": "sql",
+          "query": "WITH f AS (SELECT id AS profile_id, created_at AS created_at, 1 AS sort_order, 'Date of birth' AS field, born_on AS detail FROM app_elder_care__profiles WHERE archived_at = '' UNION ALL SELECT id, created_at, 2, 'Where they live', residence FROM app_elder_care__profiles WHERE archived_at = '' UNION ALL SELECT id, created_at, 3, 'Primary doctor', primary_doctor FROM app_elder_care__profiles WHERE archived_at = '' UNION ALL SELECT id, created_at, 4, 'Pharmacy', pharmacy FROM app_elder_care__profiles WHERE archived_at = '' UNION ALL SELECT id, created_at, 5, 'Conditions and diagnoses', diagnoses FROM app_elder_care__profiles WHERE archived_at = '' UNION ALL SELECT id, created_at, 6, 'Allergies', allergies_note FROM app_elder_care__profiles WHERE archived_at = '' UNION ALL SELECT id, created_at, 7, 'Diet', diet FROM app_elder_care__profiles WHERE archived_at = '' UNION ALL SELECT id, created_at, 8, 'Mobility and daily help', mobility FROM app_elder_care__profiles WHERE archived_at = '' UNION ALL SELECT id, created_at, 9, 'Memory and thinking', cognition FROM app_elder_care__profiles WHERE archived_at = '' UNION ALL SELECT id, created_at, 10, 'Preferences and routines', preferences FROM app_elder_care__profiles WHERE archived_at = '' UNION ALL SELECT id, created_at, 11, 'A normal day', baseline FROM app_elder_care__profiles WHERE archived_at = '') SELECT p.name AS person, f.field AS field, f.detail AS detail FROM f JOIN app_elder_care__profiles p ON p.id = f.profile_id WHERE f.detail <> '' ORDER BY f.created_at, f.profile_id, f.sort_order"
+        },
+        "columns": [
+          {
+            "key": "person",
+            "label": "Person"
+          },
+          {
+            "key": "field",
+            "label": "About"
+          },
+          {
+            "key": "detail",
+            "label": "Detail"
+          }
+        ]
+      },
+      {
+        "id": "readings",
+        "title": "Readings",
+        "description": "Blood pressure, weight and other readings the family recorded, newest first within each kind. A blood pressure has two numbers.",
+        "source": {
+          "kind": "sql",
+          "query": "SELECT p.name AS person, CASE v.kind WHEN 'bp' THEN 'Blood pressure' WHEN 'pulse' THEN 'Pulse' WHEN 'weight' THEN 'Weight' WHEN 'glucose' THEN 'Blood sugar' WHEN 'temp' THEN 'Temperature' WHEN 'oxygen' THEN 'Oxygen' WHEN 'sleep' THEN 'Sleep' WHEN 'appetite' THEN 'Appetite' WHEN 'pain' THEN 'Pain' ELSE v.kind END AS measure, (CASE WHEN v.measured_date = '' THEN substr(v.measured_at, 1, 10) ELSE v.measured_date END) AS day, v.measured_at AS taken, v.value AS value, v.value2 AS second, v.unit AS unit, v.note AS note, v.recorded_by AS recorded_by FROM app_elder_care__vitals v JOIN app_elder_care__profiles p ON p.id = v.profile_id WHERE p.archived_at = '' AND (CASE WHEN v.measured_date = '' THEN substr(v.measured_at, 1, 10) ELSE v.measured_date END) >= :range_start AND (CASE WHEN v.measured_date = '' THEN substr(v.measured_at, 1, 10) ELSE v.measured_date END) <= :range_end ORDER BY p.created_at, p.id, v.kind, v.measured_at DESC"
+        },
+        "columns": [
+          {
+            "key": "person",
+            "label": "Person"
+          },
+          {
+            "key": "measure",
+            "label": "Reading"
+          },
+          {
+            "key": "day",
+            "label": "Day",
+            "format": "date"
+          },
+          {
+            "key": "taken",
+            "label": "Time",
+            "format": "datetime"
+          },
+          {
+            "key": "value",
+            "label": "Value"
+          },
+          {
+            "key": "second",
+            "label": "Second number"
+          },
+          {
+            "key": "unit",
+            "label": "Unit"
+          },
+          {
+            "key": "note",
+            "label": "Note"
+          },
+          {
+            "key": "recorded_by",
+            "label": "Recorded by",
+            "format": "member"
+          }
+        ]
+      },
+      {
+        "id": "own_readings",
+        "title": "Readings they logged themselves",
+        "description": "Readings a person recorded for themselves, newest first within each kind.",
+        "source": {
+          "kind": "sql",
+          "query": "SELECT p.name AS person, CASE v.kind WHEN 'bp' THEN 'Blood pressure' WHEN 'pulse' THEN 'Pulse' WHEN 'weight' THEN 'Weight' WHEN 'glucose' THEN 'Blood sugar' WHEN 'temp' THEN 'Temperature' WHEN 'oxygen' THEN 'Oxygen' WHEN 'sleep' THEN 'Sleep' WHEN 'appetite' THEN 'Appetite' WHEN 'pain' THEN 'Pain' ELSE v.kind END AS measure, (CASE WHEN v.measured_date = '' THEN substr(v.measured_at, 1, 10) ELSE v.measured_date END) AS day, v.measured_at AS taken, v.value AS value, v.value2 AS second, v.unit AS unit, v.note AS note FROM app_elder_care__own_vitals v JOIN app_elder_care__profiles p ON p.member_id = v.member_id WHERE p.archived_at = '' AND (CASE WHEN v.measured_date = '' THEN substr(v.measured_at, 1, 10) ELSE v.measured_date END) >= :range_start AND (CASE WHEN v.measured_date = '' THEN substr(v.measured_at, 1, 10) ELSE v.measured_date END) <= :range_end ORDER BY p.created_at, p.id, v.kind, v.measured_at DESC"
+        },
+        "columns": [
+          {
+            "key": "person",
+            "label": "Person"
+          },
+          {
+            "key": "measure",
+            "label": "Reading"
+          },
+          {
+            "key": "day",
+            "label": "Day",
+            "format": "date"
+          },
+          {
+            "key": "taken",
+            "label": "Time",
+            "format": "datetime"
+          },
+          {
+            "key": "value",
+            "label": "Value"
+          },
+          {
+            "key": "second",
+            "label": "Second number"
+          },
+          {
+            "key": "unit",
+            "label": "Unit"
+          },
+          {
+            "key": "note",
+            "label": "Note"
+          }
+        ]
+      },
+      {
+        "id": "observations",
+        "title": "Observation log",
+        "description": "What the care circle noticed, newest first. Entries that name nobody are listed last.",
+        "source": {
+          "kind": "sql",
+          "query": "SELECT p.name AS person, (CASE WHEN o.observed_date = '' THEN substr(o.observed_at, 1, 10) ELSE o.observed_date END) AS day, o.observed_at AS noted, CASE o.category WHEN 'general' THEN 'General' WHEN 'health' THEN 'Health' WHEN 'mood' THEN 'Mood' WHEN 'meds' THEN 'Medication' ELSE o.category END AS category, o.note AS note, o.member_id AS noted_by FROM app_elder_care__observations o LEFT JOIN app_elder_care__profiles p ON p.id = o.profile_id WHERE (o.profile_id = '' OR p.archived_at = '') AND (CASE WHEN o.observed_date = '' THEN substr(o.observed_at, 1, 10) ELSE o.observed_date END) >= :range_start AND (CASE WHEN o.observed_date = '' THEN substr(o.observed_at, 1, 10) ELSE o.observed_date END) <= :range_end ORDER BY (p.created_at IS NULL), p.created_at, p.id, o.observed_at DESC"
+        },
+        "columns": [
+          {
+            "key": "person",
+            "label": "Person"
+          },
+          {
+            "key": "day",
+            "label": "Day",
+            "format": "date"
+          },
+          {
+            "key": "noted",
+            "label": "Time",
+            "format": "datetime"
+          },
+          {
+            "key": "category",
+            "label": "Category"
+          },
+          {
+            "key": "note",
+            "label": "What was noticed"
+          },
+          {
+            "key": "noted_by",
+            "label": "Noted by",
+            "format": "member"
+          }
+        ]
+      },
+      {
+        "id": "appointments",
+        "title": "Appointments",
+        "description": "Appointments in the period, newest first, with the provider and who went along. Entries that name nobody are listed last.",
+        "source": {
+          "kind": "sql",
+          "query": "SELECT p.name AS person, a.date AS day, a.time AS at_time, a.title AS appointment, a.provider AS provider, a.location AS location, a.notes AS notes, a.accompanied_by_id AS taken_by FROM app_elder_care__appointments a LEFT JOIN app_elder_care__profiles p ON p.id = a.profile_id WHERE (a.profile_id = '' OR p.archived_at = '') AND a.date >= :range_start AND a.date <= :range_end ORDER BY (p.created_at IS NULL), p.created_at, p.id, a.date DESC, a.time DESC"
+        },
+        "columns": [
+          {
+            "key": "person",
+            "label": "Person"
+          },
+          {
+            "key": "day",
+            "label": "Date",
+            "format": "date"
+          },
+          {
+            "key": "at_time",
+            "label": "Time"
+          },
+          {
+            "key": "appointment",
+            "label": "Appointment"
+          },
+          {
+            "key": "provider",
+            "label": "Provider"
+          },
+          {
+            "key": "location",
+            "label": "Location"
+          },
+          {
+            "key": "notes",
+            "label": "Notes"
+          },
+          {
+            "key": "taken_by",
+            "label": "Taken by",
+            "format": "member"
+          }
+        ]
+      }
+    ]
   },
   "nav": { "label": "Elder Care" },
   "agenda": [

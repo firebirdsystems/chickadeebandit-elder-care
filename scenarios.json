@@ -49,6 +49,20 @@
         {
           "action": "db",
           "as": "kid",
+          "sql": "SELECT * FROM app_elder_care__observations WHERE id > ? ORDER BY id LIMIT 500",
+          "params": [""],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "o1", "note": "Cheerful after lunch" }] }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "SELECT * FROM app_elder_care__observations WHERE id > ? ORDER BY id LIMIT 500",
+          "params": ["o1"],
+          "expect": { "status": 200, "rowCount": 0 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
           "sql": "SELECT id, title, status FROM app_elder_care__tasks",
           "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "t1", "title": "Collect prescription", "status": "open" }] }
         },
@@ -323,6 +337,240 @@
           "as": "steward",
           "sql": "SELECT id, diet, archived_at FROM app_elder_care__profiles",
           "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "p-mom", "diet": "Low salt, soft food", "archived_at": "2026-01-03T00:00:00Z" }] }
+        }
+      ]
+    },
+    {
+      "name": "only an adult can record a reading against a profile; a child cannot add, change or remove one, even for the profile linked to them",
+      "members": { "sibling": "adult", "mom": "child", "kid": "child" },
+      "steps": [
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "INSERT INTO app_elder_care__profiles (id, name, member_id, diet, archived_at, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, '', ?, ?, ?)",
+          "params": ["p-mom", "Mom", "{{mom}}", "Low salt", "{{sibling}}", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "INSERT INTO app_elder_care__vitals (id, profile_id, kind, value, value2, unit, note, measured_at, recorded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "params": ["x-bp", "p-mom", "bp", "128", "82", "mmHg", "Left arm", "2026-01-02T08:00:00.000Z", "{{sibling}}", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "INSERT INTO app_elder_care__vitals (id, profile_id, kind, value, value2, unit, note, measured_at, recorded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "params": ["x-kid", "p-mom", "bp", "300", "20", "mmHg", "", "2026-01-03T08:00:00.000Z", "{{sibling}}", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "mom",
+          "sql": "INSERT INTO app_elder_care__vitals (id, profile_id, kind, value, value2, unit, note, measured_at, recorded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "params": ["x-mom", "p-mom", "pulse", "72", "", "bpm", "", "2026-01-03T08:00:00.000Z", "{{mom}}", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "UPDATE app_elder_care__vitals SET value = ? WHERE id = ?",
+          "params": ["90", "x-bp"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "mom",
+          "sql": "DELETE FROM app_elder_care__vitals WHERE id = ?",
+          "params": ["x-bp"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "SELECT id, kind, value, value2, unit, note FROM app_elder_care__vitals WHERE kind = ? ORDER BY measured_at DESC",
+          "params": ["bp"],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "x-bp", "kind": "bp", "value": "128", "value2": "82", "unit": "mmHg", "note": "Left arm" }] }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "SELECT id FROM app_elder_care__vitals WHERE measured_at >= date(?, '-120 days') ORDER BY measured_at DESC, id DESC LIMIT 2000",
+          "params": ["2026-01-10"],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "x-bp" }] }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "SELECT id FROM app_elder_care__vitals WHERE measured_at <= ? AND (measured_at < ? OR id < ?) ORDER BY measured_at DESC, id DESC LIMIT 2000",
+          "params": ["9999", "9999", ""],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "x-bp" }] }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "SELECT id FROM app_elder_care__vitals WHERE measured_at <= ? AND (measured_at < ? OR id < ?) ORDER BY measured_at DESC, id DESC LIMIT 2000",
+          "params": ["2026-01-02T08:00:00.000Z", "2026-01-02T08:00:00.000Z", "x-bp"],
+          "expect": { "status": 200, "rowCount": 0 }
+        }
+      ]
+    },
+    {
+      "name": "a person who is not an adult logs their own reading, the hub stamps it with them whatever they claim, everyone reads it, and nobody else can change or remove it",
+      "members": { "sibling": "adult", "mom": "child", "kid": "child" },
+      "steps": [
+        {
+          "action": "db",
+          "as": "mom",
+          "sql": "INSERT INTO app_elder_care__own_vitals (id, member_id, kind, value, value2, unit, note, measured_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "params": ["o-mom", "{{mom}}", "pulse", "72", "", "bpm", "After breakfast", "2026-01-03T08:00:00.000Z", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "INSERT INTO app_elder_care__own_vitals (id, member_id, kind, value, value2, unit, note, measured_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "params": ["o-forged", "{{mom}}", "pulse", "180", "", "bpm", "", "2026-01-04T08:00:00.000Z", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "SELECT id, kind, value, unit, note, visibility FROM app_elder_care__own_vitals WHERE member_id = ?",
+          "params": ["{{mom}}"],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "o-mom", "kind": "pulse", "value": "72", "unit": "bpm", "note": "After breakfast", "visibility": "everyone" }] }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "SELECT id FROM app_elder_care__own_vitals WHERE member_id = ?",
+          "params": ["{{kid}}"],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "o-forged" }] }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "UPDATE app_elder_care__own_vitals SET member_id = ? WHERE id = ?",
+          "params": ["{{mom}}", "o-forged"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "SELECT id FROM app_elder_care__own_vitals WHERE member_id = ?",
+          "params": ["{{mom}}"],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "o-mom" }] }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "UPDATE app_elder_care__own_vitals SET value = ? WHERE id = ?",
+          "params": ["40", "o-mom"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "kid",
+          "sql": "DELETE FROM app_elder_care__own_vitals WHERE id = ?",
+          "params": ["o-mom"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "DELETE FROM app_elder_care__own_vitals WHERE id = ?",
+          "params": ["o-mom"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "SELECT id, value FROM app_elder_care__own_vitals WHERE id = ?",
+          "params": ["o-mom"],
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "o-mom", "value": "72" }] }
+        },
+        {
+          "action": "db",
+          "as": "mom",
+          "sql": "UPDATE app_elder_care__own_vitals SET visibility = ? WHERE id = ?",
+          "params": ["private", "o-mom"],
+          "expect": { "status": 403 }
+        },
+        {
+          "action": "db",
+          "as": "mom",
+          "sql": "SELECT id FROM app_elder_care__own_vitals WHERE member_id IN (?,?) AND measured_at <= ? AND (measured_at < ? OR id < ?) ORDER BY measured_at DESC, id DESC LIMIT 2000",
+          "params": ["{{mom}}", "{{kid}}", "9999", "9999", ""],
+          "expect": { "status": 200, "rowCount": 2 }
+        },
+        {
+          "action": "db",
+          "as": "mom",
+          "sql": "DELETE FROM app_elder_care__own_vitals WHERE id = ?",
+          "params": ["o-mom"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "SELECT id FROM app_elder_care__own_vitals WHERE id = ?",
+          "params": ["o-mom"],
+          "expect": { "status": 200, "rowCount": 0 }
+        }
+      ]
+    },
+    {
+      "name": "in a shared care space any sibling can record a reading and remove one another sibling entered, and a reading someone logged for themselves stays theirs alone, even from the steward",
+      "context": "shared_space",
+      "members": { "steward": "admin", "sibling": "adult" },
+      "steps": [
+        {
+          "action": "db",
+          "as": "steward",
+          "sql": "INSERT INTO app_elder_care__vitals (id, profile_id, kind, value, value2, unit, note, measured_at, recorded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "params": ["x-steward", "p-mom", "weight", "148", "", "lb", "", "2026-01-02T08:00:00.000Z", "{{steward}}", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "INSERT INTO app_elder_care__vitals (id, profile_id, kind, value, value2, unit, note, measured_at, recorded_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "params": ["x-sibling", "p-mom", "weight", "67.5", "", "kg", "", "2026-01-03T08:00:00.000Z", "{{sibling}}", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "DELETE FROM app_elder_care__vitals WHERE id = ?",
+          "params": ["x-steward"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "steward",
+          "sql": "SELECT id, value, unit FROM app_elder_care__vitals",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "x-sibling", "value": "67.5", "unit": "kg" }] }
+        },
+        {
+          "action": "db",
+          "as": "sibling",
+          "sql": "INSERT INTO app_elder_care__own_vitals (id, member_id, kind, value, value2, unit, note, measured_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "params": ["o-sibling", "{{sibling}}", "pulse", "66", "", "bpm", "", "2026-01-03T08:00:00.000Z", "2026-01-01T00:00:00Z"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "steward",
+          "sql": "DELETE FROM app_elder_care__own_vitals WHERE id = ?",
+          "params": ["o-sibling"],
+          "expect": { "status": 200 }
+        },
+        {
+          "action": "db",
+          "as": "steward",
+          "sql": "SELECT id, value FROM app_elder_care__own_vitals",
+          "expect": { "status": 200, "rowCount": 1, "rowsContain": [{ "id": "o-sibling", "value": "66" }] }
         }
       ]
     }
