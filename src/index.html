@@ -492,8 +492,13 @@ async function toggleTask(id) {
   try {
     if (DB) {
       const res = await db(`UPDATE app_elder_care__tasks SET status = ?, completed_at = ?, completed_by = ?, completed_by_name = ? WHERE id = ?`, [status, completed_at, completed_by, completed_by_name, id]);
-      // A tick the hub narrowed to nothing answers success with zero rows.
-      if (res.changed === 0) throw userError("That task could not be changed. It may have been removed.");
+      // A tick the hub narrowed to nothing answers success with zero rows. The
+      // task is read again, so the list shows what is stored.
+      if (res.changed === 0) {
+        const row = await storedRow("tasks", id);
+        tasks = sortTasks(withStoredRow(tasks, id, row));
+        throw row === undefined ? new Error("the task could not be read back after an update that changed nothing") : userError("That task could not be changed. It may have been removed.");
+      }
     }
     // Looked up again: a history load can replace the list while the write is
     // out, and the row found before it is then no longer the one on screen.
@@ -568,11 +573,16 @@ async function claimAppt(id) {
   const a = appointments.find(x => x.id === id); if (!a || !me) return;
   try {
     if (DB) {
-      const res = await db(`UPDATE app_elder_care__appointments SET accompanied_by_id = ?, accompanied_by_name = ? WHERE id = ?`, [me.id, me.name, id]);
+      // Only while nobody has it: a screen drawn before another adult took the
+      // appointment must not replace their name with this one.
+      const res = await db(`UPDATE app_elder_care__appointments SET accompanied_by_id = ?, accompanied_by_name = ? WHERE id = ? AND (accompanied_by_id = '' OR accompanied_by_id IS NULL)`, [me.id, me.name, id]);
       if (res.changed === 0) {
         const row = await storedRow("appointments", id);
         appointments = sortByDateTime(withStoredRow(appointments, id, row));
-        throw row === undefined ? new Error("the appointment could not be read back after an update that changed nothing") : userError("That appointment could not be changed. It may have been removed, or it is not yours to change.");
+        // Already this person's, from a second tap: nothing to report.
+        if (row?.accompanied_by_id === me.id) { render(); return; }
+        throw row === undefined ? new Error("the appointment could not be read back after an update that changed nothing")
+          : userError(row?.accompanied_by_id ? "Someone is already taking them to that appointment." : "That appointment could not be changed. It may have been removed, or it is not yours to change.");
       }
     }
     // Looked up again, for the same reason as in toggleTask.
@@ -650,7 +660,11 @@ async function setObsAudience(id, visibility) {
   try {
     if (DB) {
       const res = await db(`UPDATE app_elder_care__observations SET visibility = ? WHERE id = ?`, [visibility, id]);
-      if (res.changed === 0) throw userError("That note could not be changed. It may have been removed.");
+      if (res.changed === 0) {
+        const row = await storedRow("observations", id);
+        observations = sortObservations(withStoredRow(observations, id, row));
+        throw row === undefined ? new Error("the note could not be read back after an update that changed nothing") : userError("That note could not be changed. It may have been removed.");
+      }
     }
     const now = observations.find(x => x.id === id);
     if (now) now.visibility = visibility;
@@ -1666,10 +1680,16 @@ async function assignUntagged(id) {
   try {
     // Each list is patched as soon as its own statement lands, so a failure on
     // the second leaves the screen showing exactly what was saved.
-    if (DB) await db(`UPDATE app_elder_care__observations SET profile_id = ? WHERE profile_id = ''`, [id]);
-    for (const o of observations) if (!o.profile_id) o.profile_id = id;
-    if (DB) await db(`UPDATE app_elder_care__appointments SET profile_id = ? WHERE profile_id = ''`, [id]);
-    for (const a of appointments) if (!a.profile_id) a.profile_id = id;
+    // Zero rows while this screen holds entries that name nobody: the hub
+    // changed none of them, so they are not shown as marked.
+    const refused = (res, list) => res.changed === 0 && list.some(x => !x.profile_id);
+    // Both statements are sent either way: one list being out of date here must
+    // not keep the other from being marked.
+    const obsRefused = DB && refused(await db(`UPDATE app_elder_care__observations SET profile_id = ? WHERE profile_id = ''`, [id]), observations);
+    if (!obsRefused) for (const o of observations) if (!o.profile_id) o.profile_id = id;
+    const apptRefused = DB && refused(await db(`UPDATE app_elder_care__appointments SET profile_id = ? WHERE profile_id = ''`, [id]), appointments);
+    if (!apptRefused) for (const a of appointments) if (!a.profile_id) a.profile_id = id;
+    if (obsRefused || apptRefused) throw userError("Some entries could not be marked. They may already have been changed, or they are not yours to change.");
     render();
   } catch (e) { showError(failText(e, "Couldn’t update the entries — try again.")); }
 }
