@@ -664,6 +664,17 @@ export async function readAllPages(readPage, pageSize, maxPages = 1000) {
   throw new Error("The history is too long to load at once.");
 }
 
+/**
+ * A list after one of its rows was read again from the hub. `row` is what the
+ * hub holds now: the row, which takes the place of the copy held here; `null`
+ * when it is gone, which takes it out; or `undefined` when the read failed,
+ * which leaves the list as it is. A row the list was not showing is not added.
+ */
+export function withStoredRow(list, id, row) {
+  if (row === undefined) return list;
+  return row ? list.map(x => (x.id === id ? row : x)) : list.filter(x => x.id !== id);
+}
+
 const text = v => String(v ?? "");
 const byId = (a, b) => text(a.id).localeCompare(text(b.id));
 

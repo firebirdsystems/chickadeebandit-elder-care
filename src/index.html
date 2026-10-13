@@ -118,6 +118,7 @@ import {
   createResettableLoad, readWhenQuiet, readAllPages, sortByDateTime, sortTasks, sortObservations, defaultRecordRange, recordRangeError, recordUrl,
   isGuest, helpsHandsOn, logsOwnReading, sortShifts, runningShift, canEditShift, shiftLength, shiftTimesError, latestHandoff,
   NOTE_AUDIENCES, isFamilyOnly, canEditReading, shiftChanges, fieldConflicts, mergeNote, nextRevision,
+  withStoredRow,
 } from "./logic.js";
 
 const CONTEXT = window.__CONTEXT_URL ?? "";
@@ -172,6 +173,18 @@ async function db(sql, params = []) {
 // hub's own error text, which goes to the console.
 function userError(msg) { return Object.assign(new Error(msg), { forUser: true }); }
 function failText(e, line) { if (!e?.forUser) console.error(e); return e?.forUser ? e.message : line; }
+
+// A write the hub narrowed to nothing answers success with zero rows. The row
+// is then read again, so the list can show what is stored instead of what was
+// asked for: the row as it is now, or `null` when it is gone. `undefined` when
+// this read fails too, or answers without a list of rows: the list is then left
+// alone (see withStoredRow) and the caller shows its plain try-again line.
+async function storedRow(table, id) {
+  try {
+    const { rows } = await db(`SELECT * FROM app_elder_care__${table} WHERE id = ?`, [id]);
+    return Array.isArray(rows) ? rows[0] ?? null : undefined;
+  } catch (e) { console.error(e); return undefined; }
+}
 
 async function loadMembers() {
   if (!CONTEXT) {
@@ -492,7 +505,20 @@ async function toggleTask(id) {
 async function deleteTask(id) {
   if (!(await hubConfirm({ message: "Delete this task?", destructive: true, confirmLabel: "Delete" }))) return;
   try {
-    if (DB) await db(`DELETE FROM app_elder_care__tasks WHERE id = ?`, [id]);
+    if (DB) {
+      const res = await db(`DELETE FROM app_elder_care__tasks WHERE id = ?`, [id]);
+      // Zero rows and the row is gone: it is deleted, which is what was asked.
+      // Zero rows and it is still there: the hub refused, and the row stays.
+      // Zero rows and the read failed: not known, so the row stays and the
+      // plain line is shown; trying again settles it.
+      if (res.changed === 0) {
+        const row = await storedRow("tasks", id);
+        if (row !== null) {
+          tasks = sortTasks(withStoredRow(tasks, id, row));
+          throw row ? userError("That task could not be deleted. It may not be yours to remove.") : new Error("the task could not be read back after a delete that removed nothing");
+        }
+      }
+    }
     tasks = tasks.filter(x => x.id !== id); render();
   } catch (e) { showError(failText(e, "Couldn’t delete the task — try again.")); }
 }
@@ -541,7 +567,14 @@ async function submitAppt(form) {
 async function claimAppt(id) {
   const a = appointments.find(x => x.id === id); if (!a || !me) return;
   try {
-    if (DB) await db(`UPDATE app_elder_care__appointments SET accompanied_by_id = ?, accompanied_by_name = ? WHERE id = ?`, [me.id, me.name, id]);
+    if (DB) {
+      const res = await db(`UPDATE app_elder_care__appointments SET accompanied_by_id = ?, accompanied_by_name = ? WHERE id = ?`, [me.id, me.name, id]);
+      if (res.changed === 0) {
+        const row = await storedRow("appointments", id);
+        appointments = sortByDateTime(withStoredRow(appointments, id, row));
+        throw row === undefined ? new Error("the appointment could not be read back after an update that changed nothing") : userError("That appointment could not be changed. It may have been removed, or it is not yours to change.");
+      }
+    }
     // Looked up again, for the same reason as in toggleTask.
     const now = appointments.find(x => x.id === id);
     if (now) { now.accompanied_by_id = me.id; now.accompanied_by_name = me.name; }
@@ -551,7 +584,20 @@ async function claimAppt(id) {
 async function deleteAppt(id) {
   if (!(await hubConfirm({ message: "Remove this appointment?", destructive: true, confirmLabel: "Remove" }))) return;
   try {
-    if (DB) await db(`DELETE FROM app_elder_care__appointments WHERE id = ?`, [id]);
+    if (DB) {
+      const res = await db(`DELETE FROM app_elder_care__appointments WHERE id = ?`, [id]);
+      // Zero rows and the row is gone: it is removed, and the retraction below
+      // is still sent, since nothing says the delete that removed it sent one.
+      // Zero rows and it is still there: the hub refused; thrown, so nothing is
+      // retracted for an appointment that is still here.
+      if (res.changed === 0) {
+        const row = await storedRow("appointments", id);
+        if (row !== null) {
+          appointments = sortByDateTime(withStoredRow(appointments, id, row));
+          throw row ? userError("That appointment could not be removed. It may not be yours to remove.") : new Error("the appointment could not be read back after a delete that removed nothing");
+        }
+      }
+    }
     appointments = appointments.filter(x => x.id !== id); render();
   } catch (e) { showError(failText(e, "Couldn’t remove the appointment — try again.")); return; }
   // After the row is gone, so a failed delete never retracts an entry for an
@@ -614,7 +660,17 @@ async function setObsAudience(id, visibility) {
 async function deleteObs(id) {
   if (!(await hubConfirm({ message: "Delete this note?", destructive: true, confirmLabel: "Delete" }))) return;
   try {
-    if (DB) await db(`DELETE FROM app_elder_care__observations WHERE id = ?`, [id]);
+    if (DB) {
+      const res = await db(`DELETE FROM app_elder_care__observations WHERE id = ?`, [id]);
+      // As in deleteTask: gone is deleted, still there is refused.
+      if (res.changed === 0) {
+        const row = await storedRow("observations", id);
+        if (row !== null) {
+          observations = sortObservations(withStoredRow(observations, id, row));
+          throw row ? userError("That note could not be deleted. It may not be yours to remove.") : new Error("the note could not be read back after a delete that removed nothing");
+        }
+      }
+    }
     observations = observations.filter(x => x.id !== id); render();
   } catch (e) { showError(failText(e, "Couldn’t delete the note — try again.")); }
 }
@@ -1584,8 +1640,17 @@ async function setProfileArchived(id, archived) {
   const now = nowIso();
   const archived_at = archived ? now : "";
   try {
-    if (DB) await db(`UPDATE app_elder_care__profiles SET archived_at = ?, updated_at = ? WHERE id = ?`, [archived_at, now, id]);
-    r.archived_at = archived_at; r.updated_at = now;
+    if (DB) {
+      const res = await db(`UPDATE app_elder_care__profiles SET archived_at = ?, updated_at = ? WHERE id = ?`, [archived_at, now, id]);
+      if (res.changed === 0) {
+        const row = await storedRow("profiles", id);
+        profiles = withStoredRow(profiles, id, row);
+        throw row === undefined ? new Error("the profile could not be read back after an update that changed nothing") : userError("That profile could not be changed. It may have been removed, or it is not yours to change.");
+      }
+    }
+    // Looked up again, for the same reason as in toggleTask.
+    const held = profiles.find(x => x.id === id);
+    if (held) { held.archived_at = archived_at; held.updated_at = now; }
     if (archived && selectedProfileId === id) selectedProfileId = "";
     render();
   } catch (e) { showError(failText(e, "Couldn’t update the profile — try again.")); }
@@ -1837,7 +1902,18 @@ document.addEventListener("submit", e => {
 async function deleteVisit(id) {
   if (!(await hubConfirm({ message: "Remove this visit?", destructive: true, confirmLabel: "Remove" }))) return;
   try {
-    if (DB) await db(`DELETE FROM app_elder_care__visits WHERE id = ?`, [id]);
+    if (DB) {
+      const res = await db(`DELETE FROM app_elder_care__visits WHERE id = ?`, [id]);
+      // As on the appointment path: gone is removed and still retracted, still
+      // there is refused and nothing is retracted.
+      if (res.changed === 0) {
+        const row = await storedRow("visits", id);
+        if (row !== null) {
+          visits = sortByDateTime(withStoredRow(visits, id, row));
+          throw row ? userError("That visit could not be removed. It may not be yours to remove.") : new Error("the visit could not be read back after a delete that removed nothing");
+        }
+      }
+    }
     visits = visits.filter(x => x.id !== id); render();
   } catch (e) { showError(failText(e, "Couldn’t remove the visit — try again.")); return; }
   // Same ordering and the same unconditional publish as the appointment

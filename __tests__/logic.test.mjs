@@ -11,6 +11,7 @@ import {
   createResettableLoad, readWhenQuiet, readAllPages, sortByDateTime, sortTasks, sortObservations, defaultRecordRange, recordRangeError, recordUrl,
   isGuest, helpsHandsOn, logsOwnReading, sortShifts, runningShift, canEditShift, shiftLength, shiftTimesError, latestHandoff,
   NOTE_AUDIENCES, isFamilyOnly, canEditReading, shiftChanges, SHIFT_FORM_FIELDS, fieldConflicts, mergeNote, nextRevision,
+  withStoredRow,
 } from "../src/logic.js";
 
 describe("fmtDate / fmtWhen", () => {
@@ -1055,6 +1056,33 @@ describe("history sort order", () => {
     expect(sortByDateTime(tie).map(r => r.id)).toEqual(["a", "b"]);
     expect(() => sortTasks([{ id: "x" }, { id: "y", status: "done" }])).not.toThrow();
     expect(() => sortObservations([{ id: "x" }, { id: "y", observed_at: null }])).not.toThrow();
+  });
+});
+
+describe("withStoredRow", () => {
+  const list = [{ id: "a", title: "one" }, { id: "b", title: "two" }, { id: "c", title: "three" }];
+
+  it("puts the stored row in place of the copy held, where it was", () => {
+    const next = withStoredRow(list, "b", { id: "b", title: "changed" });
+    expect(next).toEqual([{ id: "a", title: "one" }, { id: "b", title: "changed" }, { id: "c", title: "three" }]);
+  });
+
+  it("takes the row out when the hub no longer has it", () => {
+    expect(withStoredRow(list, "b", null).map(r => r.id)).toEqual(["a", "c"]);
+  });
+
+  it("leaves the list alone when the read failed", () => {
+    expect(withStoredRow(list, "b", undefined)).toBe(list);
+  });
+
+  it("does not add a row the list was not showing", () => {
+    expect(withStoredRow(list, "z", { id: "z", title: "new" }).map(r => r.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("never changes the list it was given", () => {
+    withStoredRow(list, "b", null);
+    withStoredRow(list, "a", { id: "a", title: "changed" });
+    expect(list.map(r => r.title)).toEqual(["one", "two", "three"]);
   });
 });
 
