@@ -11,7 +11,7 @@ import {
   createResettableLoad, readWhenQuiet, readAllPages, sortByDateTime, sortTasks, sortObservations, defaultRecordRange, recordRangeError, recordUrl,
   isGuest, helpsHandsOn, logsOwnReading, sortShifts, runningShift, canEditShift, shiftLength, shiftTimesError, latestHandoff,
   NOTE_AUDIENCES, isFamilyOnly, canEditReading, shiftChanges, SHIFT_FORM_FIELDS, fieldConflicts, mergeNote, nextRevision,
-  withStoredRow,
+  withStoredRow, failureLine,
 } from "../src/logic.js";
 
 describe("fmtDate / fmtWhen", () => {
@@ -1359,6 +1359,38 @@ describe("nextRevision", () => {
   it("falls back to the clock for a stored value that is not a time", () => {
     for (const bad of ["", null, undefined, "yesterday"]) {
       expect(nextRevision(bad, "2026-01-05T13:00:00.000Z")).toBe("2026-01-05T13:00:00.000Z");
+    }
+  });
+});
+
+describe("failureLine", () => {
+  const what = { action: "add the task", thing: "task" };
+  const err = (props, message = "hub text") => Object.assign(new Error(message), props);
+
+  it("says a duplicate already exists, by code or by the hub's text", () => {
+    expect(failureLine(err({ status: 400, code: "UNIQUE_CONSTRAINT" }), what)).toBe("That task already exists.");
+    expect(failureLine(err({ status: 400 }, "UNIQUE constraint failed: app_elder_care__tasks.id"), what)).toBe("That task already exists.");
+  });
+  it("says a refusal is not allowed, without naming a role", () => {
+    expect(failureLine(err({ status: 403 }), what)).toBe("You don’t have permission to add the task.");
+  });
+  it("says a full household store is full", () => {
+    expect(failureLine(err({ status: 507 }), what)).toBe("The household’s storage is full — free up space first.");
+  });
+  it("says a row that is gone has been removed", () => {
+    expect(failureLine({ status: 404 }, what)).toBe("This task has been removed.");
+  });
+  it("says a conflict was someone else's change", () => {
+    expect(failureLine(err({ status: 409 }), what)).toBe("This task was changed by someone else — check it first.");
+  });
+  it("asks to try again only when trying again can work", () => {
+    for (const e of [err({}), err({ status: 0 }), err({ status: 400 }), err({ status: 500 }), err({ status: 503 }), null, undefined]) {
+      expect(failureLine(e, what)).toBe("Couldn’t add the task — try again.");
+    }
+  });
+  it("never shows the hub's own text", () => {
+    for (const status of [undefined, 400, 403, 404, 409, 500, 507]) {
+      expect(failureLine(err({ status }, "Row policy refused write"), what)).not.toMatch(/Row policy/);
     }
   });
 });

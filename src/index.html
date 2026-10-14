@@ -118,7 +118,7 @@ import {
   createResettableLoad, readWhenQuiet, readAllPages, sortByDateTime, sortTasks, sortObservations, defaultRecordRange, recordRangeError, recordUrl,
   isGuest, helpsHandsOn, logsOwnReading, sortShifts, runningShift, canEditShift, shiftLength, shiftTimesError, latestHandoff,
   NOTE_AUDIENCES, isFamilyOnly, canEditReading, shiftChanges, fieldConflicts, mergeNote, nextRevision,
-  withStoredRow,
+  withStoredRow, failureLine,
 } from "./logic.js";
 
 const CONTEXT = window.__CONTEXT_URL ?? "";
@@ -161,7 +161,8 @@ async function db(sql, params = []) {
   try {
     const res = await fetch(DB, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sql, params }) });
     const json = await res.json().catch(() => null);
-    if (!res.ok || !json || typeof json !== "object" || json.error) throw new Error(json?.error || "Couldn’t reach the hub. Try again.");
+    // The status and code ride on the error: the line shown depends on them.
+    if (!res.ok || !json || typeof json !== "object" || json.error) throw Object.assign(new Error(json?.error || "Couldn’t reach the hub. Try again."), { status: res.status, code: json?.code });
     return json;
   } finally {
     if (write) writeVersion++;
@@ -172,7 +173,11 @@ async function db(sql, params = []) {
 // write shows that wording, or the one fixed line for the action: never the
 // hub's own error text, which goes to the console.
 function userError(msg) { return Object.assign(new Error(msg), { forUser: true }); }
-function failText(e, line) { if (!e?.forUser) console.error(e); return e?.forUser ? e.message : line; }
+// `what` names the write in the app's words: see failureLine in logic.js.
+function failText(e, what) { if (!e?.forUser) console.error(e); return e?.forUser ? e.message : failureLine(e, what); }
+// A write that changed nothing, once the row has been read again: gone, or
+// still there and so turned away by the hub.
+function unchangedError(row, what) { return userError(failureLine({ status: row ? 403 : 404 }, what)); }
 
 // A write the hub narrowed to nothing answers success with zero rows. The row
 // is then read again, so the list can show what is stored instead of what was
@@ -444,7 +449,7 @@ async function submitVisit(form) {
     publish("elder_care.visit_scheduled", {
       date: row.date, member_id: row.member_id, source_ref_id: calendarRef("visit", row.id),
     });
-  } catch (e) { btn.disabled = false; btn.textContent = "Schedule"; showError(failText(e, "Couldn’t schedule the visit — try again.")); }
+  } catch (e) { btn.disabled = false; btn.textContent = "Schedule"; showError(failText(e, { action: "schedule the visit", thing: "visit" })); }
 }
 
 /* ── tasks ── */
@@ -476,7 +481,7 @@ async function submitTask(form) {
     tasks = [row, ...tasks];
     closeModal(); render();
     publish("elder_care.task_created", { title: row.title, assignee_id: row.assignee_id });
-  } catch (e) { btn.disabled = false; btn.textContent = "Add task"; showError(failText(e, "Couldn’t add the task — try again.")); }
+  } catch (e) { btn.disabled = false; btn.textContent = "Add task"; showError(failText(e, { action: "add the task", thing: "task" })); }
 }
 async function toggleTask(id) {
   const t = tasks.find(x => x.id === id); if (!t) return;
@@ -497,7 +502,7 @@ async function toggleTask(id) {
       if (res.changed === 0) {
         const row = await storedRow("tasks", id);
         tasks = sortTasks(withStoredRow(tasks, id, row));
-        throw row === undefined ? new Error("the task could not be read back after an update that changed nothing") : userError("That task could not be changed. It may have been removed.");
+        throw row === undefined ? new Error("the task could not be read back after an update that changed nothing") : unchangedError(row, { action: "update the task", thing: "task" });
       }
     }
     // Looked up again: a history load can replace the list while the write is
@@ -505,7 +510,7 @@ async function toggleTask(id) {
     const now = tasks.find(x => x.id === id);
     if (now) { now.status = status; now.completed_at = completed_at; now.completed_by = completed_by; now.completed_by_name = completed_by_name; }
     render();
-  } catch (e) { showError(failText(e, "Couldn’t update the task — try again.")); }
+  } catch (e) { showError(failText(e, { action: "update the task", thing: "task" })); }
 }
 async function deleteTask(id) {
   if (!(await hubConfirm({ message: "Delete this task?", destructive: true, confirmLabel: "Delete" }))) return;
@@ -520,12 +525,12 @@ async function deleteTask(id) {
         const row = await storedRow("tasks", id);
         if (row !== null) {
           tasks = sortTasks(withStoredRow(tasks, id, row));
-          throw row ? userError("That task could not be deleted. It may not be yours to remove.") : new Error("the task could not be read back after a delete that removed nothing");
+          throw row ? unchangedError(row, { action: "delete the task", thing: "task" }) : new Error("the task could not be read back after a delete that removed nothing");
         }
       }
     }
     tasks = tasks.filter(x => x.id !== id); render();
-  } catch (e) { showError(failText(e, "Couldn’t delete the task — try again.")); }
+  } catch (e) { showError(failText(e, { action: "delete the task", thing: "task" })); }
 }
 
 /* ── appointments ── */
@@ -567,7 +572,7 @@ async function submitAppt(form) {
     publish("elder_care.appointment_added", {
       title: row.title, date: row.date, source_ref_id: calendarRef("appt", row.id),
     });
-  } catch (e) { btn.disabled = false; btn.textContent = "Add"; showError(failText(e, "Couldn’t add the appointment — try again.")); }
+  } catch (e) { btn.disabled = false; btn.textContent = "Add"; showError(failText(e, { action: "add the appointment", thing: "appointment" })); }
 }
 async function claimAppt(id) {
   const a = appointments.find(x => x.id === id); if (!a || !me) return;
@@ -582,14 +587,14 @@ async function claimAppt(id) {
         // Already this person's, from a second tap: nothing to report.
         if (row?.accompanied_by_id === me.id) { render(); return; }
         throw row === undefined ? new Error("the appointment could not be read back after an update that changed nothing")
-          : userError(row?.accompanied_by_id ? "Someone is already taking them to that appointment." : "That appointment could not be changed. It may have been removed, or it is not yours to change.");
+          : row?.accompanied_by_id ? userError("Someone is already taking them to that appointment.") : unchangedError(row, { action: "update the appointment", thing: "appointment" });
       }
     }
     // Looked up again, for the same reason as in toggleTask.
     const now = appointments.find(x => x.id === id);
     if (now) { now.accompanied_by_id = me.id; now.accompanied_by_name = me.name; }
     render();
-  } catch (e) { showError(failText(e, "Couldn’t update the appointment — try again.")); }
+  } catch (e) { showError(failText(e, { action: "update the appointment", thing: "appointment" })); }
 }
 async function deleteAppt(id) {
   if (!(await hubConfirm({ message: "Remove this appointment?", destructive: true, confirmLabel: "Remove" }))) return;
@@ -604,12 +609,12 @@ async function deleteAppt(id) {
         const row = await storedRow("appointments", id);
         if (row !== null) {
           appointments = sortByDateTime(withStoredRow(appointments, id, row));
-          throw row ? userError("That appointment could not be removed. It may not be yours to remove.") : new Error("the appointment could not be read back after a delete that removed nothing");
+          throw row ? unchangedError(row, { action: "remove the appointment", thing: "appointment" }) : new Error("the appointment could not be read back after a delete that removed nothing");
         }
       }
     }
     appointments = appointments.filter(x => x.id !== id); render();
-  } catch (e) { showError(failText(e, "Couldn’t remove the appointment — try again.")); return; }
+  } catch (e) { showError(failText(e, { action: "remove the appointment", thing: "appointment" })); return; }
   // After the row is gone, so a failed delete never retracts an entry for an
   // appointment that is still here. Carries the same reference the announcement
   // did — that is what lets a rule find the one calendar entry this made.
@@ -651,7 +656,7 @@ async function submitObs(form) {
       [row.id, row.profile_id, row.member_id, row.member_name, row.category, row.note, row.observed_at, row.observed_date, row.visibility, row.created_at]);
     observations = [row, ...observations];
     closeModal(); render();
-  } catch (e) { btn.disabled = false; btn.textContent = "Post"; showError(failText(e, "Couldn’t post the note — try again.")); }
+  } catch (e) { btn.disabled = false; btn.textContent = "Post"; showError(failText(e, { action: "post the note", thing: "note" })); }
 }
 // An entry written before a caregiver joined can be taken out of their sight,
 // and one marked family only by mistake can be shown again.
@@ -663,13 +668,13 @@ async function setObsAudience(id, visibility) {
       if (res.changed === 0) {
         const row = await storedRow("observations", id);
         observations = sortObservations(withStoredRow(observations, id, row));
-        throw row === undefined ? new Error("the note could not be read back after an update that changed nothing") : userError("That note could not be changed. It may have been removed.");
+        throw row === undefined ? new Error("the note could not be read back after an update that changed nothing") : unchangedError(row, { action: "update the note", thing: "note" });
       }
     }
     const now = observations.find(x => x.id === id);
     if (now) now.visibility = visibility;
     render();
-  } catch (e) { showError(failText(e, "Couldn’t update the note — try again.")); }
+  } catch (e) { showError(failText(e, { action: "update the note", thing: "note" })); }
 }
 async function deleteObs(id) {
   if (!(await hubConfirm({ message: "Delete this note?", destructive: true, confirmLabel: "Delete" }))) return;
@@ -681,12 +686,12 @@ async function deleteObs(id) {
         const row = await storedRow("observations", id);
         if (row !== null) {
           observations = sortObservations(withStoredRow(observations, id, row));
-          throw row ? userError("That note could not be deleted. It may not be yours to remove.") : new Error("the note could not be read back after a delete that removed nothing");
+          throw row ? unchangedError(row, { action: "delete the note", thing: "note" }) : new Error("the note could not be read back after a delete that removed nothing");
         }
       }
     }
     observations = observations.filter(x => x.id !== id); render();
-  } catch (e) { showError(failText(e, "Couldn’t delete the note — try again.")); }
+  } catch (e) { showError(failText(e, { action: "delete the note", thing: "note" })); }
 }
 
 /* ── render ── */
@@ -828,7 +833,9 @@ function shiftSpan(shift) {
   const length = shiftLength(shift.started_at, shift.ended_at);
   return `${fmtWhen(shift.started_at)} to ${sameDay ? fmtClock(shift.ended_at) : fmtWhen(shift.ended_at)}${length ? ` · ${length}` : ""}`;
 }
-const SHIFT_GONE = "That shift could not be changed. It may have been removed, or it is not yours to change.";
+// The read before the write found no shift: it is gone, or out of this
+// person's sight, which is the same to them.
+const SHIFT_GONE = "This shift has been removed.";
 // Set before the insert goes out and cleared when it is back. The running
 // shift only joins the list once the hub has answered, so without this a second
 // tap in that gap passes the check below and starts a second shift.
@@ -843,7 +850,7 @@ async function startShift() {
       [row.id, row.member_id, row.member_name, row.profile_id, row.started_at, row.ended_at, row.shift_date, row.summary, row.handoff, row.created_at, row.updated_at]);
     shifts = sortShifts([row, ...shifts]);
     render();
-  } catch (e) { showError(failText(e, "Couldn’t start the shift — try again.")); }
+  } catch (e) { showError(failText(e, { action: "start the shift", thing: "shift" })); }
   finally { startingShift = false; }
 }
 // Reads one shift again and puts it in the list in place of the copy held
@@ -965,7 +972,7 @@ async function saveRunningShift(form, end) {
   } catch (e) {
     buttons.forEach(b => { b.disabled = false; });
     boxes.forEach(b => { b.readOnly = false; });
-    showError(failText(e, "Couldn’t save the shift — try again."));
+    showError(failText(e, { action: "save the shift", thing: "shift" }));
   }
 }
 // The running shift whose notes were just saved, so the card can say so until
@@ -1067,7 +1074,7 @@ async function submitShift(form) {
         [row.id, row.member_id, row.member_name, row.profile_id, row.started_at, row.ended_at, row.shift_date, row.summary, row.handoff, row.created_at, row.updated_at]);
       shifts = sortShifts([row, ...shifts]);
       closeModal(); render();
-    } catch (e) { idle(); fail(failText(e, "Couldn’t save the shift — try again.")); }
+    } catch (e) { idle(); fail(failText(e, { action: "save the shift", thing: "shift" })); }
     return;
   }
 
@@ -1135,7 +1142,7 @@ async function submitShift(form) {
     if (shiftDraft.id === id) shiftDraft = noDraft();
     shifts = sortShifts(shifts);
     closeModal(); render();
-  } catch (e) { idle(); fail(failText(e, "Couldn’t save the shift — try again.")); }
+  } catch (e) { idle(); fail(failText(e, { action: "save the shift", thing: "shift" })); }
 }
 async function deleteShift(id) {
   const shift = shifts.find(x => x.id === id); if (!shift || !canEdit()) return;
@@ -1143,10 +1150,17 @@ async function deleteShift(id) {
   try {
     if (DB) {
       const res = await db(`DELETE FROM app_elder_care__shifts WHERE id = ?`, [id]);
-      if (res.changed === 0) throw userError("That shift could not be removed. It may already be gone.");
+      // As in deleteTask: gone is removed, still there is refused.
+      if (res.changed === 0) {
+        const row = await storedRow("shifts", id);
+        if (row !== null) {
+          shifts = sortShifts(withStoredRow(shifts, id, row));
+          throw row ? unchangedError(row, { action: "remove the shift", thing: "shift" }) : new Error("the shift could not be read back after a delete that removed nothing");
+        }
+      }
     }
     shifts = shifts.filter(x => x.id !== id); render();
-  } catch (e) { showError(failText(e, "Couldn’t remove the shift — try again.")); }
+  } catch (e) { showError(failText(e, { action: "remove the shift", thing: "shift" })); }
 }
 
 function runningShiftHtml(shift) {
@@ -1390,14 +1404,18 @@ async function submitVital(form) {
           [fixed.value, fixed.value2, fixed.unit, fixed.note, fixed.measured_at, fixed.measured_date, editId]);
         // The hub narrows this to readings the caller may change, and answers
         // success with zero rows when that leaves none.
-        if (res.changed === 0) throw userError("That reading could not be changed. It may have been removed, or it is not yours to change.");
+        if (res.changed === 0) {
+          const row = await storedRow("vitals", editId);
+          if (row === null) vitals = vitals.filter(x => !(x.id === editId && !x.own));
+          throw row === undefined ? new Error("the reading could not be read back after an update that changed nothing") : unchangedError(row, { action: "save the reading", thing: "reading" });
+        }
       }
       // Looked up again, for the same reason as in toggleTask.
       const current = vitals.find(x => x.id === editId && !x.own);
       if (current) Object.assign(current, fixed);
       openVitalKind = kindId;
       closeModal(); render();
-    } catch (e) { btn.disabled = false; btn.textContent = "Save"; fail(failText(e, "Couldn’t save the reading — try again.")); }
+    } catch (e) { btn.disabled = false; btn.textContent = "Save"; fail(failText(e, { action: "save the reading", thing: "reading" })); }
     return;
   }
   // The name goes beside the id the hub stamps, so the reading still says who
@@ -1413,7 +1431,7 @@ async function submitVital(form) {
     vitals = [row, ...vitals];
     openVitalKind = row.kind;
     closeModal(); render();
-  } catch (e) { btn.disabled = false; btn.textContent = "Save"; fail(failText(e, "Couldn’t save the reading — try again.")); }
+  } catch (e) { btn.disabled = false; btn.textContent = "Save"; fail(failText(e, { action: "save the reading", thing: "reading" })); }
 }
 // Addressed by table as well as id: the two tables keep separate ids, and a
 // member can choose the id of a row they write.
@@ -1426,10 +1444,14 @@ async function deleteVital(id, own) {
       const res = await db(`DELETE FROM ${v.own ? "app_elder_care__own_vitals" : "app_elder_care__vitals"} WHERE id = ?`, [id]);
       // The hub answers a delete it narrowed to nothing with success and zero
       // rows. Saying "deleted" then would be untrue until the next reload.
-      if (res.changed === 0) throw userError("That reading could not be deleted. It may already be gone, or it is not yours to remove.");
+      // As in deleteTask: gone is deleted, still there is refused.
+      if (res.changed === 0) {
+        const row = await storedRow(v.own ? "own_vitals" : "vitals", id);
+        if (row !== null) throw row ? unchangedError(row, { action: "delete the reading", thing: "reading" }) : new Error("the reading could not be read back after a delete that removed nothing");
+      }
     }
     vitals = vitals.filter(x => x !== v); render();
-  } catch (e) { showError(failText(e, "Couldn’t delete the reading — try again.")); }
+  } catch (e) { showError(failText(e, { action: "delete the reading", thing: "reading" })); }
 }
 
 function sparkHtml(readings) {
@@ -1642,7 +1664,7 @@ async function submitProfile(form) {
     // In the form, not on the page behind it: this form is taller than the
     // screen on a phone, and the page's own error line would sit out of sight.
     const box = modalEl.querySelector("#profile-error");
-    box.textContent = /unique/i.test(e.message) ? "That member already has a profile here." : failText(e, "Couldn’t save the profile — try again.");
+    box.textContent = e?.code === "UNIQUE_CONSTRAINT" || /unique/i.test(e?.message ?? "") ? "That member already has a profile here." : failText(e, { action: "save the profile", thing: "profile" });
     box.hidden = false; box.scrollIntoView({ block: "nearest" });
   }
 }
@@ -1659,7 +1681,7 @@ async function setProfileArchived(id, archived) {
       if (res.changed === 0) {
         const row = await storedRow("profiles", id);
         profiles = withStoredRow(profiles, id, row);
-        throw row === undefined ? new Error("the profile could not be read back after an update that changed nothing") : userError("That profile could not be changed. It may have been removed, or it is not yours to change.");
+        throw row === undefined ? new Error("the profile could not be read back after an update that changed nothing") : unchangedError(row, { action: "update the profile", thing: "profile" });
       }
     }
     // Looked up again, for the same reason as in toggleTask.
@@ -1667,7 +1689,7 @@ async function setProfileArchived(id, archived) {
     if (held) { held.archived_at = archived_at; held.updated_at = now; }
     if (archived && selectedProfileId === id) selectedProfileId = "";
     render();
-  } catch (e) { showError(failText(e, "Couldn’t update the profile — try again.")); }
+  } catch (e) { showError(failText(e, { action: "update the profile", thing: "profile" })); }
 }
 // Log entries and appointments written before anyone had a profile name
 // nobody, and so show under everyone. This settles them in one step.
@@ -1689,9 +1711,11 @@ async function assignUntagged(id) {
     if (!obsRefused) for (const o of observations) if (!o.profile_id) o.profile_id = id;
     const apptRefused = DB && refused(await db(`UPDATE app_elder_care__appointments SET profile_id = ? WHERE profile_id = ''`, [id]), appointments);
     if (!apptRefused) for (const a of appointments) if (!a.profile_id) a.profile_id = id;
-    if (obsRefused || apptRefused) throw userError("Some entries could not be marked. They may already have been changed, or they are not yours to change.");
+    // Not read again: only an adult is offered this, so the likely cause is
+    // someone else marking the same entries first.
+    if (obsRefused || apptRefused) throw userError("Some of these entries were changed by someone else — check them first.");
     render();
-  } catch (e) { showError(failText(e, "Couldn’t update the entries — try again.")); }
+  } catch (e) { showError(failText(e, { action: "update the entries", thing: "entry" })); }
 }
 
 function profileCardHtml(r) {
@@ -1930,12 +1954,12 @@ async function deleteVisit(id) {
         const row = await storedRow("visits", id);
         if (row !== null) {
           visits = sortByDateTime(withStoredRow(visits, id, row));
-          throw row ? userError("That visit could not be removed. It may not be yours to remove.") : new Error("the visit could not be read back after a delete that removed nothing");
+          throw row ? unchangedError(row, { action: "remove the visit", thing: "visit" }) : new Error("the visit could not be read back after a delete that removed nothing");
         }
       }
     }
     visits = visits.filter(x => x.id !== id); render();
-  } catch (e) { showError(failText(e, "Couldn’t remove the visit — try again.")); return; }
+  } catch (e) { showError(failText(e, { action: "remove the visit", thing: "visit" })); return; }
   // Same ordering and the same unconditional publish as the appointment
   // path above, for the same reasons.
   await publishRetraction("elder_care.visit_cancelled", { source_ref_id: calendarRef("visit", id) });

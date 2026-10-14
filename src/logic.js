@@ -675,6 +675,26 @@ export function withStoredRow(list, id, row) {
   return row ? list.map(x => (x.id === id ? row : x)) : list.filter(x => x.id !== id);
 }
 
+/**
+ * The line a failed write shows, chosen from what happened and never from the
+ * hub's own text. "Try again" only where trying again can work: a write the
+ * hub turned away, or one whose row is gone, says so instead. `action` and
+ * `thing` are the app's words: { action: "add the task", thing: "task" }.
+ *
+ * A write that changed nothing is not an error with a status; the caller reads
+ * the row again and passes `{ status: 404 }` when it is gone, or the status
+ * that says why it is still there.
+ */
+export function failureLine(e, { action, thing }) {
+  if (e?.code === "UNIQUE_CONSTRAINT" || /UNIQUE constraint failed/i.test(String(e?.message ?? ""))) return `That ${thing} already exists.`;
+  const status = Number(e?.status);
+  if (status === 403) return `You don’t have permission to ${action}.`;
+  if (status === 507) return "The household’s storage is full — free up space first.";
+  if (status === 404) return `This ${thing} has been removed.`;
+  if (status === 409) return `This ${thing} was changed by someone else — check it first.`;
+  return `Couldn’t ${action} — try again.`;
+}
+
 const text = v => String(v ?? "");
 const byId = (a, b) => text(a.id).localeCompare(text(b.id));
 
