@@ -2135,7 +2135,7 @@
         {
           "action": "expectText",
           "selector": ".error",
-          "text": "kept changing",
+          "text": "permission to save the shift",
           "as": "aide"
         },
         {

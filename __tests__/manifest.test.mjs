@@ -217,7 +217,7 @@ describe("shift saves are tied to the row they read", () => {
   });
 
   it("treats a write that matched nothing as a reason to read again, not as done", () => {
-    const zero = indexHtml.match(/if \(res\.changed === 0\) continue;/g) ?? [];
+    const zero = indexHtml.match(/if \(res\.changed === 0\) \{ unchangedAt = fresh\.updated_at; continue; \}/g) ?? [];
     expect(zero.length).toBe(2);
   });
 

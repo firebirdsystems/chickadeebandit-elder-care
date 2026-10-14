@@ -873,8 +873,17 @@ async function refreshShift(id) {
 // writes nothing and goes round again: the new read either shows a change to
 // something this person also changed, which is a conflict to show them, or a
 // change to something else, and the write then goes through.
+// After the last write that changed nothing the shift is read once more, so
+// the line says what happened: gone, turned away, or changed by someone else.
 const SHIFT_SAVE_TRIES = 3;
-const SHIFT_BUSY = "This shift kept changing while it was being saved. Try again.";
+const SHIFT_SAVE = { action: "save the shift", thing: "shift" };
+const SHIFT_BUSY = failureLine({ status: 409 }, SHIFT_SAVE);
+// A guarded write that changed nothing, when the read after it finds the shift
+// still at the revision the write named: nothing got in between, so the hub
+// turned the write away (its row policy), and writing again would too.
+function refusedShiftWrite(fresh, unchangedAt) {
+  return unchangedAt !== null && fresh.updated_at === unchangedAt;
+}
 // Saves the two boxes of the running shift, and ends it when `end` is set.
 //
 // Two people write a running shift: the caregiver from this card, and any adult
@@ -909,11 +918,13 @@ async function saveRunningShift(form, end) {
   const decline = msg => { shiftSaved = ""; showError(msg); };
   try {
     let saved = false;
-    for (let attempt = 0; attempt < SHIFT_SAVE_TRIES && !saved; attempt++) {
+    let unchangedAt = null;
+    for (let attempt = 0; !saved; attempt++) {
       // Throws when the read fails, before anything here has been changed: the
       // boxes and the draft are as the person left them for the retry.
       const fresh = DB ? await refreshShift(id) : shift;
       if (!fresh) throw userError(SHIFT_GONE);
+      if (refusedShiftWrite(fresh, unchangedAt) && !fresh.ended_at) throw unchangedError(fresh, SHIFT_SAVE);
       const draft = draftFor(fresh);
       // A note the hub already holds exactly as it is here needs no write, and
       // is nobody else's change either: it is this person's own save, made from
@@ -943,6 +954,8 @@ async function saveRunningShift(form, end) {
       if (end) set.ended_at = nowIso();
       const cols = Object.keys(set);
       if (cols.length) {
+        // Every write so far changed nothing and the shift kept moving.
+        if (attempt === SHIFT_SAVE_TRIES) return decline(SHIFT_BUSY);
         set.updated_at = nextRevision(fresh.updated_at, nowIso()); cols.push("updated_at");
         if (DB) {
           // Column names come from the fixed lists above, never from the form.
@@ -950,7 +963,7 @@ async function saveRunningShift(form, end) {
           // and at the same revision. Anything saved since then leaves it
           // matching nothing, and the loop reads the shift again.
           const res = await db(`UPDATE app_elder_care__shifts SET ${cols.map(c => `${c} = ?`).join(", ")} WHERE id = ? AND ended_at = '' AND updated_at = ?`, [...cols.map(c => set[c]), id, fresh.updated_at]);
-          if (res.changed === 0) continue;
+          if (res.changed === 0) { unchangedAt = fresh.updated_at; continue; }
         }
         // Looked up again: refreshShift replaced the row this function started with.
         const current = shifts.find(x => x.id === id);
@@ -959,7 +972,6 @@ async function saveRunningShift(form, end) {
       }
       saved = true;
     }
-    if (!saved) return decline(SHIFT_BUSY);
     // "Saved." is only said when nothing was typed while the save was out.
     if (end) { shiftDraft = noDraft(); shiftSaved = ""; }
     else {
@@ -972,7 +984,7 @@ async function saveRunningShift(form, end) {
   } catch (e) {
     buttons.forEach(b => { b.disabled = false; });
     boxes.forEach(b => { b.readOnly = false; });
-    showError(failText(e, { action: "save the shift", thing: "shift" }));
+    showError(failText(e, SHIFT_SAVE));
   }
 }
 // The running shift whose notes were just saved, so the card can say so until
@@ -1088,11 +1100,13 @@ async function submitShift(form) {
   busy();
   try {
     let saved = false;
-    for (let attempt = 0; attempt < SHIFT_SAVE_TRIES && !saved; attempt++) {
+    let unchangedAt = null;
+    for (let attempt = 0; !saved; attempt++) {
       // Throws when the read fails, and nothing is written: the form stays
       // open as the person left it.
       const fresh = DB ? await refreshShift(id) : before;
       if (!fresh) throw userError(SHIFT_GONE);
+      if (refusedShiftWrite(fresh, unchangedAt)) throw unchangedError(fresh, SHIFT_SAVE);
       // A field this person changed that somebody else has changed too is not
       // written over. The form is opened again on the shift as it is now, with
       // this person's other changes put back and, for a note, both texts in
@@ -1115,6 +1129,8 @@ async function submitShift(form) {
       const ended_at = !changed.includes("end") ? fresh.ended_at : held.end ? localInputToIso(held.end, Date.now()) : "";
       const problem = shiftTimesError(started_at, ended_at);
       if (problem) throw userError(problem);
+      // Every write so far changed nothing and the shift kept moving.
+      if (attempt === SHIFT_SAVE_TRIES) { idle(); return fail(SHIFT_BUSY); }
       const set = {};
       if (changed.includes("profile_id")) set.profile_id = held.profile_id;
       if (changed.includes("start")) { set.started_at = started_at; set.shift_date = dayOf(started_at); }
@@ -1130,14 +1146,13 @@ async function submitShift(form) {
         // save that got in between leaves it matching nothing; the loop then
         // reads the shift again and the check is made against what is there.
         const res = await db(`UPDATE app_elder_care__shifts SET ${cols.map(c => `${c} = ?`).join(", ")} WHERE id = ? AND updated_at = ?`, [...cols.map(c => set[c]), id, fresh.updated_at]);
-        if (res.changed === 0) continue;
+        if (res.changed === 0) { unchangedAt = fresh.updated_at; continue; }
       }
       // Looked up again: refreshShift replaced the row this function started with.
       const current = shifts.find(x => x.id === id);
       if (current) Object.assign(current, set);
       saved = true;
     }
-    if (!saved) { idle(); return fail(SHIFT_BUSY); }
     // The running card redraws from the row, not from a draft of the old text.
     if (shiftDraft.id === id) shiftDraft = noDraft();
     shifts = sortShifts(shifts);
@@ -1644,8 +1659,17 @@ async function submitProfile(form) {
         }))) { btn.disabled = false; btn.textContent = "Save"; return; }
       }
       if (cols.length) {
-        if (DB) await db(`UPDATE app_elder_care__profiles SET ${cols.map(c => `${c} = ?`).join(", ")}, updated_at = ? WHERE id = ?`,
-          [...cols.map(c => changed[c]), now, id]);
+        if (DB) {
+          const res = await db(`UPDATE app_elder_care__profiles SET ${cols.map(c => `${c} = ?`).join(", ")}, updated_at = ? WHERE id = ?`,
+            [...cols.map(c => changed[c]), now, id]);
+          // As in setProfileArchived: gone is removed, still there is refused.
+          // The form stays open as typed.
+          if (res.changed === 0) {
+            const row = await storedRow("profiles", id);
+            profiles = withStoredRow(profiles, id, row);
+            throw row === undefined ? new Error("the profile could not be read back after an update that changed nothing") : unchangedError(row, { action: "save the profile", thing: "profile" });
+          }
+        }
         Object.assign(before, changed, { updated_at: now });
         // Which self-logged readings are read depends on who is linked.
         if ("member_id" in changed) resetVitalsLoad();
