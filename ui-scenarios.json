@@ -73,7 +73,7 @@
         },
         {
           "action": "expectVisible",
-          "selector": "[data-testid=\"record-card\"] [data-report=\"full_record\"]",
+          "selector": "[data-testid=\"record-card\"] [data-report=\"full_record\"][data-format=\"html\"]",
           "as": "parent"
         },
         {
