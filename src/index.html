@@ -1552,12 +1552,17 @@ function loadRecords() {
     .catch(() => { records.failed = true; })
     .finally(() => { records.loading = false; if (tab === "profile") render(); });
 }
-function openRecord(id, format) {
+/** Refreshes the default range and checks it; false after saying why not. */
+function settleRecordRange() {
   if (!recordRangeEdited) ({ from: recordFrom, to: recordTo } = defaultRecordRange(today()));
   const problem = recordRangeError(recordFrom, recordTo);
-  if (problem) { showError(problem); return; }
+  if (problem) { showError(problem); return false; }
   // A complaint about the dates must not outlive the dates being put right.
   if (error) { error = ""; render(); }
+  return true;
+}
+function openRecord(id, format) {
+  if (!settleRecordRange()) return;
   window.open(recordUrl(REPORTS_URL, id, format, recordFrom, recordTo, window.location.href), "_blank", "noopener");
 }
 function recordCardHtml() {
@@ -1571,17 +1576,19 @@ function recordCardHtml() {
     return `${head}<div class="card loading" data-testid="record-card">Loading…</div>`;
   }
   if (!recordRangeEdited) ({ from: recordFrom, to: recordTo } = defaultRecordRange(today()));
+  // The hub lists "pdf" only when it can render one.
+  const fullPdf = Array.isArray(records.full?.formats) && records.full.formats.includes("pdf");
   const button = (id, format, label, primary) => `<button class="btn btn-sm ${primary ? "" : "btn-ghost"}" data-report="${esc(id)}" data-format="${format}">${label}</button>`;
   return `${head}
     <div class="card stack" data-testid="record-card">
-      <div>One document with the care profile, the readings, the observation log and the appointments for the dates below. Open it, then print it or save it as a PDF.</div>
+      <div>One document with the care profile, the readings, the observation log and the appointments for the dates below. Open it, then print it or save it as a PDF${fullPdf ? ", or download a PDF made by the hub" : ""}.</div>
       <div class="two">
         <div class="field"><label for="rec-from">From</label><input id="rec-from" type="date" value="${esc(recordFrom)}"></div>
         <div class="field"><label for="rec-to">To</label><input id="rec-to" type="date" value="${esc(recordTo)}"></div>
       </div>
       <span class="hint">Leave From empty to start at the beginning. Each row shows the day it is listed under, and its time in UTC.</span>
       <span class="hint">Medications are not in this record. They are kept in the Medications app, where whoever manages them can print the list.</span>
-      ${records.full ? `<div class="actions">${button(records.full.id, "html", "Open the record", true)}</div>` : ""}
+      ${records.full ? `<div class="actions">${button(records.full.id, "html", "Open the record", true)}${fullPdf ? button(records.full.id, "pdf", "Download PDF") : ""}</div>` : ""}
       ${records.views.length ? `<div>${records.views.map(v => `
         <div class="reading-row" data-testid="record-view" data-record="${esc(v.id)}">
           <div><strong>${esc(v.title)}</strong>${v.description ? `<div class="meta">${esc(v.description)}</div>` : ""}</div>
