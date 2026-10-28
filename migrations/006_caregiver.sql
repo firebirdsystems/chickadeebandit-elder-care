@@ -20,7 +20,7 @@
 -- `visibility` is the column the row policy reads to let everyone see a row.
 -- It is always 'everyone' and the manifest lets nobody write it.
 CREATE TABLE IF NOT EXISTS app_elder_care__shifts (
-  id TEXT PRIMARY KEY,
+  id TEXT NOT NULL PRIMARY KEY,
   member_id TEXT NOT NULL,
   member_name TEXT NOT NULL DEFAULT '',
   profile_id TEXT NOT NULL DEFAULT '',

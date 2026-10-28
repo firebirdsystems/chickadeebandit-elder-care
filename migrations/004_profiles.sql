@@ -17,7 +17,7 @@
 -- Profiles are archived, never deleted (`archived_at`, '' while active), so a
 -- record that names a person always has a person to name.
 CREATE TABLE IF NOT EXISTS app_elder_care__profiles (
-  id TEXT PRIMARY KEY,
+  id TEXT NOT NULL PRIMARY KEY,
   name TEXT NOT NULL,
   member_id TEXT,
   born_on TEXT NOT NULL DEFAULT '',

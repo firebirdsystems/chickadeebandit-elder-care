@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS app_elder_care__visits (
-  id TEXT PRIMARY KEY,
+  id TEXT NOT NULL PRIMARY KEY,
   date TEXT NOT NULL,
   time TEXT DEFAULT '',
   member_id TEXT NOT NULL,
@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS app_elder_care__visits (
 );
 
 CREATE TABLE IF NOT EXISTS app_elder_care__tasks (
-  id TEXT PRIMARY KEY,
+  id TEXT NOT NULL PRIMARY KEY,
   title TEXT NOT NULL,
   detail TEXT DEFAULT '',
   assignee_id TEXT DEFAULT '',
@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS app_elder_care__tasks (
 );
 
 CREATE TABLE IF NOT EXISTS app_elder_care__appointments (
-  id TEXT PRIMARY KEY,
+  id TEXT NOT NULL PRIMARY KEY,
   title TEXT NOT NULL,
   provider TEXT DEFAULT '',
   date TEXT NOT NULL,
@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS app_elder_care__appointments (
 );
 
 CREATE TABLE IF NOT EXISTS app_elder_care__observations (
-  id TEXT PRIMARY KEY,
+  id TEXT NOT NULL PRIMARY KEY,
   member_id TEXT NOT NULL,
   member_name TEXT NOT NULL,
   category TEXT NOT NULL DEFAULT 'general',

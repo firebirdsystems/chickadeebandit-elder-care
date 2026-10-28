@@ -30,7 +30,7 @@
 -- the manifest, so it can be filtered and grouped. `unit` is stored with the
 -- reading because a family can weigh in pounds one month and kilograms the next.
 CREATE TABLE IF NOT EXISTS app_elder_care__vitals (
-  id TEXT PRIMARY KEY,
+  id TEXT NOT NULL PRIMARY KEY,
   profile_id TEXT NOT NULL,
   kind TEXT NOT NULL,
   value TEXT NOT NULL,
@@ -53,7 +53,7 @@ CREATE INDEX IF NOT EXISTS app_elder_care__vitals_measured_at_idx
 -- `visibility` is the column the row policy reads to let everyone see a row. It
 -- is always 'everyone' and the manifest lets nobody write it.
 CREATE TABLE IF NOT EXISTS app_elder_care__own_vitals (
-  id TEXT PRIMARY KEY,
+  id TEXT NOT NULL PRIMARY KEY,
   member_id TEXT NOT NULL,
   kind TEXT NOT NULL,
   value TEXT NOT NULL,
